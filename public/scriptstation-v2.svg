@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">ScriptStationV2</title>
+  <desc id="desc">A glowing developer station logo with a code prompt and station rails.</desc>
+  <defs>
+    <linearGradient id="g" x1="18" y1="14" x2="110" y2="114" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/><stop offset=".45" stop-color="#a5b4fc"/><stop offset="1" stop-color="#67e8f9"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="28" y1="25" x2="100" y2="104" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="#09090b"/>
+  <path d="M31 20h66a11 11 0 0 1 11 11v45a11 11 0 0 1-11 11H31a11 11 0 0 1-11-11V31a11 11 0 0 1 11-11Z" fill="url(#glow)" opacity=".16" filter="url(#blur)"/>
+  <path d="M31 20h66a11 11 0 0 1 11 11v45a11 11 0 0 1-11 11H31a11 11 0 0 1-11-11V31a11 11 0 0 1 11-11Z" fill="#0d0d12" stroke="url(#g)" stroke-width="3"/>
+  <path d="M20 39h88" stroke="url(#g)" stroke-width="2" opacity=".55"/>
+  <circle cx="32" cy="30" r="3" fill="#fff"/><circle cx="42" cy="30" r="3" fill="#a5b4fc"/><circle cx="52" cy="30" r="3" fill="#67e8f9"/>
+  <path d="m42 54 12 10-12 10M69 54 57 74" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 99h68M39 88v11M89 88v11" stroke="url(#g)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M49 105h30" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+</svg>
