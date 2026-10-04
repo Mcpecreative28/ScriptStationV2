@@ -1,1 +1,1 @@
-
+import * as I from 'lucide-react'; export const Icon=({name,size=18}:{name:keyof typeof I,size?:number})=>{const C=I[name] as React.ComponentType<{size?:number;strokeWidth?:number}>;return C?<C size={size} strokeWidth={1.8}/>:null};
