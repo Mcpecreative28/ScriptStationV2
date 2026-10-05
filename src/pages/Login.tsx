@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
+```tsx
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   onAuthStateChanged,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   type User,
 } from 'firebase/auth';
 import {
   doc,
-  getDoc,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
@@ -28,77 +27,97 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const processingUid = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!auth || !db) {
+    if (!auth) {
+      setError('Firebase Authentication tidak tersedia.');
       return;
     }
 
-    let mounted = true;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
 
-    const handleUser = async (user: User | null) => {
-      if (!user || !mounted) {
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError('');
-
-        await createUserProfile(user);
-
-        if (mounted) {
-          navigate('/dashboard', { replace: true });
-        }
-      } catch (err) {
-        console.error('Failed to create user profile:', err);
-
-        if (mounted) {
-          setError(
-            'Login berhasil, tetapi profil pengguna gagal disimpan. Silakan coba lagi.'
-          );
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    const unsubscribe = onAuthStateChanged(auth, handleUser);
-
-    getRedirectResult(auth).catch((err: unknown) => {
-      console.error('Google redirect login error:', err);
-
-      if (mounted) {
-        setError(getFirebaseErrorMessage(err));
-        setLoading(false);
-      }
+      await processUser(user);
     });
 
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, [navigate]);
+    return () => unsubscribe();
+  }, []);
+
+  async function processUser(user: User) {
+    if (processingUid.current === user.uid) {
+      return;
+    }
+
+    processingUid.current = user.uid;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      if (!db) {
+        throw new Error(
+          'Firestore tidak tersedia. Periksa konfigurasi Firebase.'
+        );
+      }
+
+      const userRef = doc(db, 'users', user.uid);
+
+      await setDoc(
+        userRef,
+        {
+          uid: user.uid,
+          displayName: user.displayName ?? '',
+          email: user.email ?? '',
+          photoURL: user.photoURL ?? '',
+          role: 'user',
+          updatedAt: serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      );
+
+      navigate('/dashboard', { replace: true });
+    } catch (err: unknown) {
+      console.error('USER PROFILE ERROR:', err);
+
+      setError(getFirebaseErrorMessage(err));
+
+      processingUid.current = null;
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const handleGoogleLogin = async () => {
-    if (!auth || !db || !firebaseConfigured) {
+    if (!firebaseConfigured || !auth) {
       setError(
-        'Firebase belum terkonfigurasi. Pastikan Environment Variables Vercel sudah benar.'
+        'Firebase belum terkonfigurasi. Periksa Environment Variables Vercel.'
       );
       return;
     }
 
-    setError('');
+    if (!db) {
+      setError(
+        'Firestore tidak tersedia. Firebase App belum terkonfigurasi dengan benar.'
+      );
+      return;
+    }
+
     setLoading(true);
+    setError('');
 
     try {
-      await signInWithRedirect(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+
+      await processUser(result.user);
     } catch (err: unknown) {
-      console.error('Google login error:', err);
+      console.error('GOOGLE LOGIN ERROR:', err);
 
       setError(getFirebaseErrorMessage(err));
       setLoading(false);
+      processingUid.current = null;
     }
   };
 
@@ -106,12 +125,11 @@ export default function Login() {
     <Shell>
       <main className="grid min-h-[85vh] place-items-center px-4 pt-20">
         <div className="glass w-full max-w-md rounded-3xl p-7 text-center">
-          {/* Logo */}
+
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-black">
             <Command />
           </div>
 
-          {/* Title */}
           <h1 className="mt-5 text-2xl font-semibold">
             Welcome to ScriptStationV2
           </h1>
@@ -120,23 +138,24 @@ export default function Login() {
             Login untuk upload, rating, comment, dan mengelola resource.
           </p>
 
-          {/* Firebase warning */}
           {!firebaseConfigured && (
             <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-left text-xs leading-5 text-red-300">
               Firebase belum terkonfigurasi pada deployment ini.
-              <br />
-              Pastikan Environment Variables Vercel sudah benar.
             </div>
           )}
 
-          {/* Error */}
           {error && (
-            <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-left text-xs leading-5 text-red-300">
-              {error}
+            <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-left text-xs leading-5 text-red-300">
+              <div className="font-semibold">
+                Login gagal
+              </div>
+
+              <div className="mt-1 break-words">
+                {error}
+              </div>
             </div>
           )}
 
-          {/* Google Login */}
           <button
             type="button"
             onClick={handleGoogleLogin}
@@ -159,64 +178,57 @@ export default function Login() {
           <p className="mt-5 text-[11px] leading-5 text-zinc-600">
             Login menggunakan Google melalui Firebase Authentication.
           </p>
+
         </div>
       </main>
     </Shell>
   );
 }
 
-/**
- * Membuat atau memperbarui profil user di Firestore.
- *
- * Struktur:
- *
- * users/{uid}
- *   uid
- *   displayName
- *   email
- *   photoURL
- *   role
- *   createdAt
- *   updatedAt
- */
-async function createUserProfile(user: User) {
-  if (!db) {
-    throw new Error('Firestore is not configured.');
+function getFirebaseErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return 'Terjadi kesalahan yang tidak diketahui.';
   }
 
-  const userRef = doc(db, 'users', user.uid);
-  const snapshot = await getDoc(userRef);
+  const firebaseError = error as {
+    code?: string;
+    message?: string;
+  };
 
-  if (!snapshot.exists()) {
-    await setDoc(userRef, {
-      uid: user.uid,
-      displayName: user.displayName ?? '',
-      email: user.email ?? '',
-      photoURL: user.photoURL ?? '',
-      role: 'user',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  const code = firebaseError.code ?? '';
+  const message = firebaseError.message ?? '';
 
-    return;
+  if (code === 'permission-denied') {
+    return 'Firestore menolak akses. Periksa Firestore Rules yang aktif di Firebase Console.';
   }
 
-  await setDoc(
-    userRef,
-    {
-      displayName: user.displayName ?? '',
-      photoURL: user.photoURL ?? '',
-      updatedAt: serverTimestamp(),
-    },
-    {
-      merge: true,
-    }
-  );
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Jendela Google ditutup sebelum login selesai.';
+  }
+
+  if (code === 'auth/popup-blocked') {
+    return 'Browser memblokir popup Google. Izinkan popup untuk situs ini lalu coba lagi.';
+  }
+
+  if (code === 'auth/unauthorized-domain') {
+    return 'Domain Vercel belum diizinkan di Firebase Authentication → Settings → Authorized domains.';
+  }
+
+  if (code === 'auth/operation-not-allowed') {
+    return 'Google Authentication belum diaktifkan di Firebase.';
+  }
+
+  if (code === 'auth/network-request-failed') {
+    return 'Koneksi ke Firebase gagal. Periksa koneksi internet.';
+  }
+
+  if (message) {
+    return `${code ? `${code}: ` : ''}${message}`;
+  }
+
+  return code || 'Terjadi kesalahan Firebase.';
 }
 
-/**
- * Google icon.
- */
 function GoogleIcon() {
   return (
     <svg
@@ -246,38 +258,4 @@ function GoogleIcon() {
     </svg>
   );
 }
-
-/**
- * Mengubah Firebase error menjadi pesan yang lebih mudah dipahami.
- */
-function getFirebaseErrorMessage(error: unknown) {
-  const code =
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error
-      ? String((error as { code?: unknown }).code)
-      : '';
-
-  switch (code) {
-    case 'auth/unauthorized-domain':
-      return 'Domain website belum diizinkan oleh Firebase Authentication.';
-
-    case 'auth/operation-not-allowed':
-      return 'Google Authentication belum diaktifkan di Firebase.';
-
-    case 'auth/network-request-failed':
-      return 'Koneksi jaringan gagal. Periksa koneksi internet kamu.';
-
-    case 'auth/popup-blocked':
-      return 'Login diblokir oleh browser. Coba lagi.';
-
-    case 'auth/user-disabled':
-      return 'Akun ini telah dinonaktifkan.';
-
-    case 'auth/too-many-requests':
-      return 'Terlalu banyak percobaan login. Coba lagi beberapa saat nanti.';
-
-    default:
-      return 'Login Google gagal. Silakan coba lagi.';
-  }
-}
+```
