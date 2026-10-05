@@ -1,0 +1,2 @@
+import Shell from '../components/Shell';
+export default function Placeholder({title}:{title:string}){return <Shell><main className="mx-auto max-w-5xl px-4 pt-36 sm:px-6"><div className="glass rounded-3xl p-8"><p className="text-xs uppercase tracking-widest text-zinc-600">Coming module</p><h1 className="mt-3 text-4xl font-semibold">{title}</h1><p className="mt-3 max-w-xl text-zinc-500">Struktur route dan UI sudah disiapkan berdasarkan spesifikasi. Modul ini tinggal dihubungkan ke collection Firestore dan server-side actions.</p></div></main></Shell>}
