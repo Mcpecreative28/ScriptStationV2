@@ -72,15 +72,17 @@ export default function Admin() {
         const snapshot = await getDocs(resourcesQuery);
 
         const data: Resource[] = snapshot.docs
-          .map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }))
-          .filter(
-            (resource) => resource.status === 'pending'
-          ) as Resource[];
+  .map((document) => {
+    const item = document.data() as Omit<Resource, 'id'>;
 
-        setResources(data);
+    return {
+      ...item,
+      id: document.id,
+    };
+  })
+  .filter((resource) => resource.status === 'pending');
+
+      setResources(data);
       } catch (err) {
         console.error(err);
         setError(
