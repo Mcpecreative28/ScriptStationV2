@@ -20,6 +20,7 @@
     "tailwindcss": "latest",
     "@tailwindcss/vite": "latest",
     "firebase": "latest",
+    "firebase-admin": "latest",
     "zod": "latest"
   },
   "devDependencies": {
