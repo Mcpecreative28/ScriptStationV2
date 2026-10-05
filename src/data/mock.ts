@@ -7,4 +7,3 @@ export const resources:Resource[]=[
 {id:'5',title:'Glass Dashboard UI',desc:'Komponen dashboard glassmorphism yang responsif dan ringan.',category:'Frontend',language:'React',author:'PixelStack',rating:5,downloads:'4.1K',tags:['react','ui','tailwind'],kind:'Snippet'},
 {id:'6',title:'Baileys Session Manager',desc:'Contoh pengelolaan session Baileys tanpa menaruh credential di client.',category:'Baileys',language:'JavaScript',author:'DevRoom',rating:4.9,downloads:'3.8K',tags:['baileys','whatsapp','auth'],kind:'Baileys'}
 ];
-  
