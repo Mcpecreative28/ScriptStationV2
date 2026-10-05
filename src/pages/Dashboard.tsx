@@ -59,15 +59,21 @@ export default function Dashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!auth || !db) {
-      setError('Firebase belum terkonfigurasi.');
-      setLoading(false);
-      return;
-    }
+  if (!auth || !db) {
+    setError('Firebase belum terkonfigurasi.');
+    setLoading(false);
+    return;
+  }
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+  const firebaseAuth = auth;
+  const firestore = db;
+
+  const unsubscribe = onAuthStateChanged(
+    firebaseAuth,
+    async (currentUser) => {
       if (!currentUser) {
         navigate('/login', { replace: true });
+        setLoading(false);
         return;
       }
 
@@ -77,7 +83,12 @@ export default function Dashboard() {
         setUser(currentUser);
 
         // Load user profile
-        const userRef = doc(db, 'users', currentUser.uid);
+        const userRef = doc(
+          firestore,
+          'users',
+          currentUser.uid
+        );
+
         const userSnapshot = await getDoc(userRef);
 
         if (userSnapshot.exists()) {
@@ -86,7 +97,7 @@ export default function Dashboard() {
 
         // Load user's resources
         const scriptsQuery = query(
-          collection(db, 'scripts'),
+          collection(firestore, 'scripts'),
           where('ownerId', '==', currentUser.uid)
         );
 
@@ -116,10 +127,11 @@ export default function Dashboard() {
       } finally {
         setLoading(false);
       }
-    });
+    }
+  );
 
-    return () => unsubscribe();
-  }, [navigate]);
+  return () => unsubscribe();
+}, [navigate]);
 
   const handleLogout = async () => {
     if (!auth) return;
