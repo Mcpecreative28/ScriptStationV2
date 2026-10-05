@@ -7,4 +7,3 @@ export const app=firebaseConfigured?(getApps()[0]??initializeApp(config)):null;
 export const auth=app?getAuth(app):null;
 export const db=app?getFirestore(app):null;
 export const googleProvider=new GoogleAuthProvider();
-              
