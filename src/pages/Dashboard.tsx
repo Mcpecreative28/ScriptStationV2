@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   onAuthStateChanged,
@@ -363,7 +363,7 @@ function StatCard({
   label,
   description,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   value: number;
   label: string;
   description: string;
@@ -396,7 +396,7 @@ function ActionCard({
   description,
 }: {
   href: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
 }) {
