@@ -23,6 +23,9 @@
     "firebase-admin": "latest",
     "zod": "latest"
   },
+  "overrides": {
+  "jose": "5.10.0"
+  },
   "devDependencies": {
     "@types/react": "latest",
     "@types/react-dom": "latest"
