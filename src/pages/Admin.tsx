@@ -334,11 +334,11 @@ async function updateResourceStatus(
   type="button"
   disabled={processingId === resource.id}
   onClick={() =>
-    updateResourceStatus(resource.id, 'rejected')
+    updateResourceStatus(resource.id, 'approved')
   }
-  className="w-full min-w-0 rounded-xl border border-red-400/20 bg-red-400/5 px-5 py-3 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+  className="w-full min-w-0 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 >
-  {processingId === resource.id ? 'Processing...' : 'Reject'}
+  {processingId === resource.id ? 'Processing...' : 'Approve'}
 </button>
                     </div>
                   </div>
