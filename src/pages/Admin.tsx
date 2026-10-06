@@ -154,7 +154,7 @@ async function updateResourceStatus(
   if (loading) {
     return (
       <Shell>
-        <main className="mx-auto max-w-6xl px-4 pb-12 pt-32 sm:px-6">
+        <main className="mx-auto w-full max-w-6xl min-w-0 overflow-hidden px-4 pb-12 pt-32 sm:px-6">
           <div className="glass rounded-3xl p-8 text-center text-zinc-500">
             Checking admin access...
           </div>
@@ -166,7 +166,7 @@ async function updateResourceStatus(
   if (!user) {
     return (
       <Shell>
-        <main className="mx-auto max-w-6xl px-4 pb-12 pt-32 sm:px-6">
+        <main className="mx-auto w-full max-w-6xl min-w-0 overflow-hidden px-4 pb-12 pt-32 sm:px-6">
           <p className="text-xs uppercase tracking-[.2em] text-zinc-600">
             Administration
           </p>
@@ -187,7 +187,7 @@ async function updateResourceStatus(
 
   return (
     <Shell>
-      <main className="mx-auto max-w-6xl px-4 pb-12 pt-32 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl min-w-0 overflow-hidden px-4 pb-12 pt-32 sm:px-6">
         <p className="text-xs uppercase tracking-[.2em] text-zinc-600">
           Administration
         </p>
@@ -251,7 +251,7 @@ async function updateResourceStatus(
               {resources.map((resource) => (
                 <article
                   key={resource.id}
-                  className="glass rounded-3xl p-5 sm:p-7"
+                  className="glass min-w-0 w-full max-w-full overflow-hidden rounded-3xl p-4 sm:p-6 lg:p-7"
                 >
                   <div className="flex flex-col gap-5">
                     <div>
@@ -318,14 +318,14 @@ async function updateResourceStatus(
                       </pre>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <div className="grid w-full min-w-0 grid-cols-1 gap-3 sm:flex sm:justify-end">
                       <button
   type="button"
   disabled={processingId === resource.id}
   onClick={() =>
     updateResourceStatus(resource.id, 'rejected')
   }
-  className="rounded-xl border border-red-400/20 bg-red-400/5 px-5 py-3 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+  className="w-full min-w-0 rounded-xl border border-red-400/20 bg-red-400/5 px-5 py-3 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 >
   {processingId === resource.id ? 'Processing...' : 'Reject'}
 </button>
@@ -334,11 +334,11 @@ async function updateResourceStatus(
   type="button"
   disabled={processingId === resource.id}
   onClick={() =>
-    updateResourceStatus(resource.id, 'approved')
+    updateResourceStatus(resource.id, 'rejected')
   }
-  className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+  className="w-full min-w-0 rounded-xl border border-red-400/20 bg-red-400/5 px-5 py-3 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 >
-  {processingId === resource.id ? 'Processing...' : 'Approve'}
+  {processingId === resource.id ? 'Processing...' : 'Reject'}
 </button>
                     </div>
                   </div>
