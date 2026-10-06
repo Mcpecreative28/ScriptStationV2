@@ -6,6 +6,7 @@ import ResourceDetail from './pages/ResourceDetail';
 import Upload from './pages/Upload';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Admin from './pages/Admin';
 import Placeholder from './pages/Placeholder';
 
 import './index.css';
@@ -66,10 +67,7 @@ export default function App() {
           element={<Placeholder title="Marketplace" />}
         />
 
-        <Route
-          path="/admin"
-          element={<Placeholder title="Admin Panel" />}
-        />
+        <Route path="/admin" element={<Admin />} />
 
         <Route
           path="*"
