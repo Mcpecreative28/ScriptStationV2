@@ -86,7 +86,7 @@ export default function Listing({
             const item =
               document.data() as FirestoreResource;
 
-            const resourceKind =
+            const resourceKind: Resource['kind'] =
               item.category === 'Snippet'
                 ? 'Snippet'
                 : item.category === 'Baileys'
