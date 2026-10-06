@@ -12,10 +12,16 @@ function getAdminApp() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      'Firebase Admin environment variables are missing.'
-    );
+  if (!projectId) {
+    throw new Error('FIREBASE_PROJECT_ID is missing.');
+  }
+
+  if (!clientEmail) {
+    throw new Error('FIREBASE_CLIENT_EMAIL is missing.');
+  }
+
+  if (!privateKey) {
+    throw new Error('FIREBASE_PRIVATE_KEY is missing.');
   }
 
   return initializeApp({
@@ -38,41 +44,62 @@ export default async function handler(
     };
   }
 ) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed',
-    });
-  }
-
-  const bootstrapSecret =
-    process.env.ADMIN_BOOTSTRAP_SECRET;
-
-  const providedSecret = req.headers?.[
-    'x-bootstrap-secret'
-  ];
-
-  if (
-    !bootstrapSecret ||
-    providedSecret !== bootstrapSecret
-  ) {
-    return res.status(403).json({
-      error: 'Forbidden',
-    });
-  }
-
   try {
+    if (req.method !== 'POST') {
+      return res.status(405).json({
+        success: false,
+        error: 'Method not allowed.',
+      });
+    }
+
+    const bootstrapSecret =
+      process.env.ADMIN_BOOTSTRAP_SECRET;
+
+    const headerValue =
+      req.headers?.['x-bootstrap-secret'];
+
+    const providedSecret =
+      Array.isArray(headerValue)
+        ? headerValue[0]
+        : headerValue;
+
+    if (!bootstrapSecret) {
+      return res.status(500).json({
+        success: false,
+        error: 'ADMIN_BOOTSTRAP_SECRET is missing on Vercel.',
+      });
+    }
+
+    if (!providedSecret) {
+      return res.status(401).json({
+        success: false,
+        error: 'Bootstrap secret was not provided.',
+      });
+    }
+
+    if (providedSecret !== bootstrapSecret) {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid bootstrap secret.',
+      });
+    }
+
     const app = getAdminApp();
     const adminAuth = getAuth(app);
 
     const user =
       await adminAuth.getUserByEmail(ADMIN_EMAIL);
 
-    const currentClaims = user.customClaims || {};
+    const currentClaims =
+      user.customClaims || {};
 
-    await adminAuth.setCustomUserClaims(user.uid, {
-      ...currentClaims,
-      admin: true,
-    });
+    await adminAuth.setCustomUserClaims(
+      user.uid,
+      {
+        ...currentClaims,
+        admin: true,
+      }
+    );
 
     return res.status(200).json({
       success: true,
@@ -81,10 +108,16 @@ export default async function handler(
       email: user.email,
     });
   } catch (error) {
-    console.error(error);
+    console.error('MAKE_ADMIN_ERROR:', error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unknown server error.';
 
     return res.status(500).json({
-      error: 'Failed to assign admin claim.',
+      success: false,
+      error: message,
     });
   }
 }
