@@ -5,6 +5,9 @@ import {
   orderBy,
   query,
   Timestamp,
+  updateDoc,
+  doc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -32,6 +35,58 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [loadingResources, setLoadingResources] = useState(false);
   const [error, setError] = useState('');
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+async function updateResourceStatus(
+  resourceId: string,
+  status: 'approved' | 'rejected'
+) {
+  if (!user || !db) {
+    setError('Akun belum siap atau Firebase belum terkonfigurasi.');
+    return;
+  }
+
+  const action =
+    status === 'approved' ? 'menyetujui' : 'menolak';
+
+  const confirmed = window.confirm(
+    `Yakin ingin ${action} resource ini?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setProcessingId(resourceId);
+  setError('');
+
+  try {
+    const firestore = db;
+
+    await updateDoc(
+      doc(firestore, 'scripts', resourceId),
+      {
+        status,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: user.uid,
+        reviewedByEmail: user.email || null,
+        updatedAt: serverTimestamp(),
+      }
+    );
+
+    setResources((current) =>
+      current.filter((resource) => resource.id !== resourceId)
+    );
+  } catch (err) {
+    console.error(err);
+
+    setError(
+      `Gagal ${status === 'approved' ? 'menyetujui' : 'menolak'} resource.`
+    );
+  } finally {
+    setProcessingId(null);
+  }
+}
 
   useEffect(() => {
     if (!auth) {
@@ -265,18 +320,26 @@ export default function Admin() {
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                       <button
-                        disabled
-                        className="rounded-xl border border-white/8 bg-white/[0.03] px-5 py-3 text-sm font-medium text-zinc-600"
-                      >
-                        Reject
-                      </button>
+  type="button"
+  disabled={processingId === resource.id}
+  onClick={() =>
+    updateResourceStatus(resource.id, 'rejected')
+  }
+  className="rounded-xl border border-red-400/20 bg-red-400/5 px-5 py-3 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {processingId === resource.id ? 'Processing...' : 'Reject'}
+</button>
 
                       <button
-                        disabled
-                        className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black opacity-50"
-                      >
-                        Approve
-                      </button>
+  type="button"
+  disabled={processingId === resource.id}
+  onClick={() =>
+    updateResourceStatus(resource.id, 'approved')
+  }
+  className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {processingId === resource.id ? 'Processing...' : 'Approve'}
+</button>
                     </div>
                   </div>
                 </article>
