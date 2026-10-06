@@ -13,7 +13,9 @@ function getAdminApp() {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error('Firebase Admin environment variables are missing.');
+    throw new Error(
+      'Firebase Admin environment variables are missing.'
+    );
   }
 
   return initializeApp({
@@ -42,13 +44,33 @@ export default async function handler(
     });
   }
 
+  const bootstrapSecret =
+    process.env.ADMIN_BOOTSTRAP_SECRET;
+
+  const providedSecret = req.headers?.[
+    'x-bootstrap-secret'
+  ];
+
+  if (
+    !bootstrapSecret ||
+    providedSecret !== bootstrapSecret
+  ) {
+    return res.status(403).json({
+      error: 'Forbidden',
+    });
+  }
+
   try {
     const app = getAdminApp();
     const adminAuth = getAuth(app);
 
-    const user = await adminAuth.getUserByEmail(ADMIN_EMAIL);
+    const user =
+      await adminAuth.getUserByEmail(ADMIN_EMAIL);
+
+    const currentClaims = user.customClaims || {};
 
     await adminAuth.setCustomUserClaims(user.uid, {
+      ...currentClaims,
       admin: true,
     });
 
@@ -65,4 +87,4 @@ export default async function handler(
       error: 'Failed to assign admin claim.',
     });
   }
-      }
+}
