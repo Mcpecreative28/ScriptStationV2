@@ -6,7 +6,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  Github,
   Loader2,
   UserRound,
 } from 'lucide-react';
@@ -523,7 +522,7 @@ export default function ResourceDetail() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="grid h-10 w-10 place-items-center rounded-xl bg-white text-black">
-                      <Github size={18} />
+                      <Code2 size={18} />
                     </div>
 
                     <div>
