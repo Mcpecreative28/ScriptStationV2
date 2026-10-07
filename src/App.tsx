@@ -23,13 +23,13 @@ export default function App() {
         />
 
         <Route
-          path="/snippets"
-          element={<Listing kind="Snippet" />}
+          path="/snippets/:id"
+          element={<ResourceDetail />}
         />
 
         <Route
-          path="/baileys"
-          element={<Listing kind="Baileys" />}
+          path="/baileys/:id"
+          element={<ResourceDetail />}
         />
 
         <Route
