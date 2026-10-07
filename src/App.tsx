@@ -43,6 +43,16 @@ export default function App() {
         />
 
         <Route
+          path="/snippets/upload"
+          element={<Upload />}
+        />
+
+        <Route
+          path="/baileys/upload"
+          element={<Upload />}
+        />
+
+        <Route
           path="/login"
           element={<Login />}
         />
