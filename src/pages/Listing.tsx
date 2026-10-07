@@ -16,18 +16,38 @@ import Shell from '../components/Shell';
 type FirestoreResource = {
   title?: string;
   description?: string;
-  category?: 'Script' | 'Snippet' | 'Baileys' | string;
+
+  category?: string;
+  resourceType?: string;
+
   language?: string;
   author?: string;
+
   ownerName?: string;
+  ownerEmail?: string;
+  ownerId?: string;
+
   rating?: number;
   downloads?: number;
+  views?: number;
+
   tags?: string[];
-  status?: string;
-  createdAt?: {
-    seconds?: number;
-    nanoseconds?: number;
-  };
+
+  thumbnailUrl?: string | null;
+
+  sourceCode?: string;
+
+  scriptType?: Resource['scriptType'];
+  platform?: Resource['platform'];
+  snippetType?: Resource['snippetType'];
+
+  mediafireUrl?: string | null;
+  githubUrl?: string | null;
+
+  status?: 'pending' | 'approved' | 'rejected';
+
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 function formatDownloads(value: number) {
@@ -86,63 +106,98 @@ export default function Listing({
             const item =
               document.data() as FirestoreResource;
 
+            const rawKind =
+              item.resourceType ??
+              item.category ??
+              'Script';
+
             const resourceKind: Resource['kind'] =
-              item.category === 'Snippet'
+              rawKind === 'Snippet'
                 ? 'Snippet'
-                : item.category === 'Baileys'
+                : rawKind === 'Baileys'
                   ? 'Baileys'
                   : 'Script';
 
             return {
-  id: doc.id,
+              id: document.id,
 
-  title: data.title ?? 'Untitled',
+              title: item.title ?? 'Untitled',
 
-  description: data.description ?? '',
-  desc: data.description ?? '',
+              description: item.description ?? '',
+              desc: item.description ?? '',
 
-  category: data.category ?? data.platform ?? data.scriptType ?? '',
+              category:
+                item.category ??
+                item.platform ??
+                item.scriptType ??
+                '',
 
-  language: data.language ?? '',
+              language: item.language ?? '',
 
-  author: data.author ?? 'Unknown',
+              author: item.author ?? 'Unknown',
 
-  rating: Number(data.rating ?? 0),
+              rating: Number(item.rating ?? 0),
 
-  downloads: Number(data.downloads ?? 0),
+              downloads: formatDownloads(
+                Number(item.downloads ?? 0)
+              ),
 
-  tags: Array.isArray(data.tags) ? data.tags : [],
+              tags: Array.isArray(item.tags)
+                ? item.tags
+                : [],
 
-  kind: resourceKind,
+              kind: resourceKind,
 
-  thumbnailUrl: data.thumbnailUrl ?? null,
+              thumbnailUrl:
+                item.thumbnailUrl ?? null,
 
-  uploaderName: data.ownerName ?? '',
-  uploaderEmail: data.ownerEmail ?? '',
-  ownerId: data.ownerId ?? '',
+              uploaderName:
+                item.ownerName ?? '',
 
-  sourceCode: data.sourceCode ?? '',
+              uploaderEmail:
+                item.ownerEmail ?? '',
 
-  scriptType: data.scriptType,
-  platform: data.platform,
-  snippetType: data.snippetType,
+              ownerId:
+                item.ownerId ?? '',
 
-  mediafireUrl: data.mediafireUrl ?? null,
-  githubUrl: data.githubUrl ?? null,
+              sourceCode:
+                item.sourceCode ?? '',
 
-  views: Number(data.views ?? 0),
+              scriptType:
+                item.scriptType,
 
-  status: data.status ?? 'approved',
+              platform:
+                item.platform,
 
-  createdAt: data.createdAt,
-  updatedAt: data.updatedAt,
-};
+              snippetType:
+                item.snippetType,
+
+              mediafireUrl:
+                item.mediafireUrl ?? null,
+
+              githubUrl:
+                item.githubUrl ?? null,
+
+              views:
+                Number(item.views ?? 0),
+
+              status:
+                item.status ?? 'approved',
+
+              createdAt:
+                item.createdAt,
+
+              updatedAt:
+                item.updatedAt,
+            };
           })
           .sort((a, b) =>
             a.title.localeCompare(
               b.title,
               undefined,
-              { sensitivity: 'base' }
+              {
+                sensitivity: 'base',
+              }
             )
           );
 
@@ -150,7 +205,10 @@ export default function Listing({
           setResources(data);
         }
       } catch (err) {
-        console.error('LISTING_LOAD_ERROR:', err);
+        console.error(
+          'LISTING_LOAD_ERROR:',
+          err
+        );
 
         if (active) {
           setError(
@@ -172,7 +230,9 @@ export default function Listing({
   }, []);
 
   const list = kind
-    ? resources.filter((resource) => resource.kind === kind)
+    ? resources.filter(
+        (resource) => resource.kind === kind
+      )
     : resources;
 
   return (
@@ -194,7 +254,13 @@ export default function Listing({
           </div>
 
           <Link
-            to="/scripts/upload"
+            to={
+              kind === 'Snippet'
+                ? '/snippets/upload'
+                : kind === 'Baileys'
+                  ? '/baileys/upload'
+                  : '/scripts/upload'
+            }
             className="inline-flex w-fit shrink-0 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-zinc-200"
           >
             <Upload size={16} />
@@ -237,28 +303,32 @@ export default function Listing({
           </div>
         )}
 
-        {!loading && !error && list.length === 0 && (
-          <div className="glass mt-8 rounded-3xl p-10 text-center">
-            <p className="text-lg font-medium text-zinc-300">
-              Belum ada resource yang tersedia.
-            </p>
+        {!loading &&
+          !error &&
+          list.length === 0 && (
+            <div className="glass mt-8 rounded-3xl p-10 text-center">
+              <p className="text-lg font-medium text-zinc-300">
+                Belum ada resource yang tersedia.
+              </p>
 
-            <p className="mt-2 text-sm text-zinc-600">
-              Resource yang sudah disetujui admin akan muncul di sini.
-            </p>
-          </div>
-        )}
+              <p className="mt-2 text-sm text-zinc-600">
+                Resource yang sudah disetujui admin akan muncul di sini.
+              </p>
+            </div>
+          )}
 
-        {!loading && !error && list.length > 0 && (
-          <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {list.map((resource) => (
-              <ResourceCard
-                key={resource.id}
-                r={resource}
-              />
-            ))}
-          </div>
-        )}
+        {!loading &&
+          !error &&
+          list.length > 0 && (
+            <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {list.map((resource) => (
+                <ResourceCard
+                  key={resource.id}
+                  r={resource}
+                />
+              ))}
+            </div>
+          )}
       </main>
     </Shell>
   );
