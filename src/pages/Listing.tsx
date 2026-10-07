@@ -94,33 +94,49 @@ export default function Listing({
                   : 'Script';
 
             return {
-              id: document.id,
-              title: item.title || 'Untitled Resource',
-              desc:
-                item.description ||
-                'Tidak ada deskripsi.',
-              category:
-                item.category || resourceKind,
-              language:
-                item.language || 'Unknown',
-              author:
-                item.ownerName ||
-                item.author ||
-                'Anonymous',
-              rating:
-                typeof item.rating === 'number'
-                  ? item.rating
-                  : 0,
-              downloads: formatDownloads(
-                typeof item.downloads === 'number'
-                  ? item.downloads
-                  : 0
-              ),
-              tags: Array.isArray(item.tags)
-                ? item.tags
-                : [],
-              kind: resourceKind,
-            };
+  id: doc.id,
+
+  title: data.title ?? 'Untitled',
+
+  description: data.description ?? '',
+  desc: data.description ?? '',
+
+  category: data.category ?? data.platform ?? data.scriptType ?? '',
+
+  language: data.language ?? '',
+
+  author: data.author ?? 'Unknown',
+
+  rating: Number(data.rating ?? 0),
+
+  downloads: Number(data.downloads ?? 0),
+
+  tags: Array.isArray(data.tags) ? data.tags : [],
+
+  kind: resourceKind,
+
+  thumbnailUrl: data.thumbnailUrl ?? null,
+
+  uploaderName: data.ownerName ?? '',
+  uploaderEmail: data.ownerEmail ?? '',
+  ownerId: data.ownerId ?? '',
+
+  sourceCode: data.sourceCode ?? '',
+
+  scriptType: data.scriptType,
+  platform: data.platform,
+  snippetType: data.snippetType,
+
+  mediafireUrl: data.mediafireUrl ?? null,
+  githubUrl: data.githubUrl ?? null,
+
+  views: Number(data.views ?? 0),
+
+  status: data.status ?? 'approved',
+
+  createdAt: data.createdAt,
+  updatedAt: data.updatedAt,
+};
           })
           .sort((a, b) =>
             a.title.localeCompare(
