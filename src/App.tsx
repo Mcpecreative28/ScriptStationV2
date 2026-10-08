@@ -7,6 +7,7 @@ import Upload from './pages/Upload';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
+import Search from './pages/Search';
 import Placeholder from './pages/Placeholder';
 
 import './index.css';
@@ -74,7 +75,7 @@ export default function App() {
 
         <Route
           path="/search"
-          element={<Placeholder title="Search" />}
+          element={<Search />}
         />
 
         <Route
