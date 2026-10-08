@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Filter, Search, SlidersHorizontal, Upload, X } from 'lucide-react';
 import {
-  collection,
-  getDocs,
-  query,
-  where,
-} from 'firebase/firestore';
+  Check,
+  ChevronDown,
+  Filter,
+  Search,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from 'lucide-react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 import type { Resource } from '../data/mock';
 import { db } from '../lib/firebase';
@@ -55,9 +58,7 @@ function timestampToMillis(value: unknown) {
     'toMillis' in value &&
     typeof (value as { toMillis?: unknown }).toMillis === 'function'
   ) {
-    return Number(
-      (value as { toMillis: () => number }).toMillis()
-    );
+    return Number((value as { toMillis: () => number }).toMillis());
   }
 
   if (
@@ -65,14 +66,10 @@ function timestampToMillis(value: unknown) {
     value !== null &&
     'seconds' in value
   ) {
-    return Number(
-      (value as { seconds?: number }).seconds ?? 0
-    ) * 1000;
+    return Number((value as { seconds?: number }).seconds ?? 0) * 1000;
   }
 
-  if (value instanceof Date) {
-    return value.getTime();
-  }
+  if (value instanceof Date) return value.getTime();
 
   if (typeof value === 'string' || typeof value === 'number') {
     const parsed = new Date(value).getTime();
@@ -98,6 +95,89 @@ function getUploadPath(kind?: Resource['kind']) {
       : '/scripts/upload';
 }
 
+function GlassSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <span className="mb-2 block text-[11px] font-medium uppercase tracking-[.14em] text-zinc-600">
+        {label}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${
+          open
+            ? 'border-white/15 bg-white/10 text-white shadow-lg shadow-black/20'
+            : 'border-white/8 bg-white/[.035] text-zinc-300 hover:bg-white/[.06]'
+        }`}
+      >
+        <span className="truncate">{value}</span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-zinc-500 transition ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label={`Close ${label} menu`}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+
+          <div
+            role="listbox"
+            className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 max-h-64 overflow-y-auto rounded-2xl border border-white/10 bg-[#151519]/95 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-3xl"
+          >
+            {options.map((option) => {
+              const selected = option === value;
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    onChange(option);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm transition ${
+                    selected
+                      ? 'bg-white text-black'
+                      : 'text-zinc-300 hover:bg-white/8 hover:text-white'
+                  }`}
+                >
+                  <span className="truncate">{option}</span>
+                  {selected && <Check size={15} />}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Listing({
   kind,
 }: {
@@ -109,9 +189,12 @@ export default function Listing({
 
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('Latest');
+
   const [languageFilter, setLanguageFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
   const [platformFilter, setPlatformFilter] = useState('All');
+  const [authorFilter, setAuthorFilter] = useState('All');
+
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -176,19 +259,14 @@ export default function Listing({
           };
         });
 
-        if (active) {
-          setResources(data);
-        }
+        if (active) setResources(data);
       } catch (err) {
         console.error('LISTING_LOAD_ERROR:', err);
-
         if (active) {
           setError('Gagal mengambil resource dari server.');
         }
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -199,50 +277,82 @@ export default function Listing({
     };
   }, []);
 
+  const scopedResources = useMemo(
+    () =>
+      resources.filter(
+        (resource) => !kind || resource.kind === kind
+      ),
+    [resources, kind]
+  );
+
   const availableLanguages = useMemo(() => {
-    const values = resources
-      .filter((resource) => !kind || resource.kind === kind)
+    const values = scopedResources
       .map((resource) => resource.language?.trim())
       .filter(Boolean) as string[];
 
     return ['All', ...Array.from(new Set(values)).sort()];
-  }, [resources, kind]);
+  }, [scopedResources]);
 
   const availableTypes = useMemo(() => {
-    const current = resources.filter(
-      (resource) => !kind || resource.kind === kind
-    );
-
     const values =
       kind === 'Script'
-        ? current.map((resource) => resource.scriptType)
+        ? scopedResources.map((resource) => resource.scriptType)
         : kind === 'Snippet'
-          ? current.map((resource) => resource.snippetType)
+          ? scopedResources.map((resource) => resource.snippetType)
           : [];
 
     return [
       'All',
       ...Array.from(new Set(values.filter(Boolean) as string[])).sort(),
     ];
-  }, [resources, kind]);
+  }, [scopedResources, kind]);
 
   const availablePlatforms = useMemo(() => {
     if (kind !== 'Script') return ['All'];
 
-    const values = resources
-      .filter((resource) => resource.kind === 'Script')
+    const values = scopedResources
       .map((resource) => resource.platform)
       .filter(Boolean) as string[];
 
     return ['All', ...Array.from(new Set(values)).sort()];
-  }, [resources, kind]);
+  }, [scopedResources, kind]);
+
+  const availableAuthors = useMemo(() => {
+    const values = scopedResources
+      .map((resource) => resource.author?.trim())
+      .filter(Boolean) as string[];
+
+    return ['All', ...Array.from(new Set(values)).sort()];
+  }, [scopedResources]);
+
+  useEffect(() => {
+    if (!availableLanguages.includes(languageFilter)) {
+      setLanguageFilter('All');
+    }
+    if (!availableTypes.includes(typeFilter)) {
+      setTypeFilter('All');
+    }
+    if (!availablePlatforms.includes(platformFilter)) {
+      setPlatformFilter('All');
+    }
+    if (!availableAuthors.includes(authorFilter)) {
+      setAuthorFilter('All');
+    }
+  }, [
+    availableLanguages,
+    availableTypes,
+    availablePlatforms,
+    availableAuthors,
+    languageFilter,
+    typeFilter,
+    platformFilter,
+    authorFilter,
+  ]);
 
   const list = useMemo(() => {
     const queryText = search.trim().toLowerCase();
 
-    const filtered = resources.filter((resource) => {
-      if (kind && resource.kind !== kind) return false;
-
+    const filtered = scopedResources.filter((resource) => {
       if (
         languageFilter !== 'All' &&
         resource.language !== languageFilter
@@ -253,6 +363,13 @@ export default function Listing({
       if (
         platformFilter !== 'All' &&
         resource.platform !== platformFilter
+      ) {
+        return false;
+      }
+
+      if (
+        authorFilter !== 'All' &&
+        resource.author !== authorFilter
       ) {
         return false;
       }
@@ -294,20 +411,14 @@ export default function Listing({
       switch (sortMode) {
         case 'Popular':
           return Number(b.views ?? 0) - Number(a.views ?? 0);
-
         case 'Top Rated':
           return Number(b.rating ?? 0) - Number(a.rating ?? 0);
-
         case 'Most Downloaded':
           return Number(b.downloads ?? 0) - Number(a.downloads ?? 0);
-
         case 'A-Z':
-          return a.title.localeCompare(
-            b.title,
-            undefined,
-            { sensitivity: 'base' }
-          );
-
+          return a.title.localeCompare(b.title, undefined, {
+            sensitivity: 'base',
+          });
         case 'Latest':
         default:
           return (
@@ -317,24 +428,28 @@ export default function Listing({
       }
     });
   }, [
-    resources,
-    kind,
+    scopedResources,
     search,
     sortMode,
     languageFilter,
     typeFilter,
     platformFilter,
+    authorFilter,
   ]);
 
-  const hasActiveFilters =
-    languageFilter !== 'All' ||
-    typeFilter !== 'All' ||
-    platformFilter !== 'All';
+  const activeFilterCount =
+    (languageFilter !== 'All' ? 1 : 0) +
+    (typeFilter !== 'All' ? 1 : 0) +
+    (platformFilter !== 'All' ? 1 : 0) +
+    (authorFilter !== 'All' ? 1 : 0);
+
+  const hasActiveFilters = activeFilterCount > 0;
 
   function resetFilters() {
     setLanguageFilter('All');
     setTypeFilter('All');
     setPlatformFilter('All');
+    setAuthorFilter('All');
   }
 
   return (
@@ -402,9 +517,9 @@ export default function Listing({
             >
               <SlidersHorizontal size={16} />
               Filters
-              {hasActiveFilters && (
+              {activeFilterCount > 0 && (
                 <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-black">
-                  !
+                  {activeFilterCount}
                 </span>
               )}
             </button>
@@ -436,71 +551,62 @@ export default function Listing({
           </div>
 
           {filtersOpen && (
-            <div className="mt-4 grid gap-3 border-t border-white/6 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-xs text-zinc-500">
-                Language
-                <select
+            <div className="mt-4 border-t border-white/6 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <GlassSelect
+                  label="Programming Language"
                   value={languageFilter}
-                  onChange={(event) =>
-                    setLanguageFilter(event.target.value)
-                  }
-                  className="mt-2 w-full rounded-xl border border-white/8 bg-black/30 px-3 py-2.5 text-sm text-zinc-300 outline-none"
-                >
-                  {availableLanguages.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={availableLanguages}
+                  onChange={setLanguageFilter}
+                />
 
-              {(kind === 'Script' || kind === 'Snippet') && (
-                <label className="text-xs text-zinc-500">
-                  Type
-                  <select
+                {(kind === 'Script' || kind === 'Snippet') && (
+                  <GlassSelect
+                    label={kind === 'Script' ? 'Script Type' : 'Snippet Type'}
                     value={typeFilter}
-                    onChange={(event) =>
-                      setTypeFilter(event.target.value)
-                    }
-                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/30 px-3 py-2.5 text-sm text-zinc-300 outline-none"
-                  >
-                    {availableTypes.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+                    options={availableTypes}
+                    onChange={setTypeFilter}
+                  />
+                )}
 
-              {kind === 'Script' && (
-                <label className="text-xs text-zinc-500">
-                  Platform
-                  <select
+                {kind === 'Script' && (
+                  <GlassSelect
+                    label="Platform"
                     value={platformFilter}
-                    onChange={(event) =>
-                      setPlatformFilter(event.target.value)
-                    }
-                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/30 px-3 py-2.5 text-sm text-zinc-300 outline-none"
-                  >
-                    {availablePlatforms.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+                    options={availablePlatforms}
+                    onChange={setPlatformFilter}
+                  />
+                )}
 
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="self-end rounded-xl border border-white/8 bg-white/5 px-4 py-2.5 text-xs text-zinc-400 transition hover:bg-white/10 hover:text-white"
-                >
-                  Reset filters
-                </button>
-              )}
+                <GlassSelect
+                  label="Author"
+                  value={authorFilter}
+                  options={availableAuthors}
+                  onChange={setAuthorFilter}
+                />
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 border-t border-white/6 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-medium text-zinc-400">
+                    Filter resource {kind ?? 'semua'}
+                  </p>
+                  <p className="mt-1 text-[11px] text-zinc-600">
+                    Filter mengikuti metadata yang tersedia pada form upload.
+                  </p>
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/5 px-4 py-2.5 text-xs text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <X size={14} />
+                    Reset filters
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -513,10 +619,8 @@ export default function Listing({
           </p>
 
           {(search || hasActiveFilters) && !loading && (
-            <p className="text-xs text-zinc-600">
-              {search
-                ? `Search: "${search}"`
-                : 'Filtered results'}
+            <p className="text-right text-xs text-zinc-600">
+              {search ? `Search: "${search}"` : `${activeFilterCount} filter aktif`}
             </p>
           )}
         </div>
