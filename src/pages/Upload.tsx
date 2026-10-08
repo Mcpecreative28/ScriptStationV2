@@ -15,7 +15,6 @@ import {
   Code2,
   ExternalLink,
   FileCode2,
-  Github,
   ImagePlus,
   Link2,
   Loader2,
@@ -794,7 +793,7 @@ export default function Upload() {
                   />
 
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-700">
-                    <Github size={12} />
+                    <ExternalLink size={12} />
                     Wajib menggunakan domain GitHub.
                   </p>
                 </div>
