@@ -21,6 +21,16 @@ export default function App() {
           path="/scripts"
           element={<Listing kind="Script" />}
         />
+        
+        <Route
+          path="/snippets"
+          element={<Listing kind="Snippet" />}
+        />
+
+        <Route
+          path="/baileys"
+          element={<Listing kind="Baileys" />}
+        />
 
         <Route
           path="/snippets/:id"
