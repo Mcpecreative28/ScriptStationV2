@@ -172,6 +172,21 @@ export default function ResourceCard({
           )}
         </div>
 
+        {r.kind === 'Script' && (r.mediafireUrl || r.githubUrl) && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {r.mediafireUrl && (
+              <a href={r.mediafireUrl} target="_blank" rel="noopener noreferrer nofollow" onClick={(event) => event.stopPropagation()} className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200">
+                <Download size={13} /> MediaFire
+              </a>
+            )}
+            {r.githubUrl && (
+              <a href={r.githubUrl} target="_blank" rel="noopener noreferrer nofollow" onClick={(event) => event.stopPropagation()} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-200 transition hover:bg-white/10">
+                <ArrowUpRight size={13} /> GitHub
+              </a>
+            )}
+          </div>
+        )}
+
         {/* Author / uploader */}
         <div className="mt-3 flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
