@@ -37,6 +37,7 @@ type FirestoreResource = {
   snippetType?: Resource['snippetType'];
   mediafireUrl?: string | null;
   githubUrl?: string | null;
+  previewImageUrls?: string[];
   status?: 'pending' | 'approved' | 'rejected';
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -250,6 +251,7 @@ export default function Listing({
             snippetType: item.snippetType,
             mediafireUrl: item.mediafireUrl ?? null,
             githubUrl: item.githubUrl ?? null,
+            previewImageUrls: Array.isArray(item.previewImageUrls) ? item.previewImageUrls.filter((url: unknown) => typeof url === 'string') as string[] : [],
             rating: Number(item.rating ?? 0),
             downloads: Number(item.downloads ?? 0),
             views: Number(item.views ?? 0),

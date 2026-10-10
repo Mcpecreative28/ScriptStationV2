@@ -192,6 +192,9 @@ export default function Upload() {
 
   const [title, setTitle] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [previewImageUrlsText, setPreviewImageUrlsText] = useState('');
+  const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const [author, setAuthor] = useState('');
   const [description, setDescription] = useState('');
   const [language, setLanguage] = useState('');
@@ -251,6 +254,7 @@ export default function Upload() {
     const cleanDescription = description.trim();
     const cleanLanguage = language.trim();
     const cleanSourceCode = sourceCode.trim();
+    const cleanPreviewUrls = previewImageUrlsText.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
     const cleanMediaFire = mediafireUrl.trim();
     const cleanGitHub = githubUrl.trim();
 
@@ -271,12 +275,12 @@ export default function Upload() {
       return;
     }
 
-    if (!cleanSourceCode) {
+    if (kind !== 'Script' && !cleanSourceCode) {
       setError('Source code wajib diisi.');
       return;
     }
 
-    if (cleanSourceCode.length > 200000) {
+    if (kind !== 'Script' && cleanSourceCode.length > 200000) {
       setError(
         'Source code terlalu besar. Maksimal 200.000 karakter.'
       );
@@ -294,6 +298,10 @@ export default function Upload() {
     }
 
     if (kind === 'Script') {
+      if (!cleanMediaFire && !cleanGitHub) {
+        setError('Isi minimal satu link download: MediaFire atau GitHub.');
+        return;
+      }
       if (!scriptType) {
         setError(
           'Script Type wajib dipilih.'
@@ -315,41 +323,37 @@ export default function Upload() {
         return;
       }
 
-      if (!cleanMediaFire) {
-        setError(
-          'Link MediaFire wajib diisi.'
-        );
-        return;
-      }
-
-      if (
-        !isAllowedHost(cleanMediaFire, [
-          'mediafire.com',
-          'www.mediafire.com',
-        ])
-      ) {
+      if (cleanMediaFire && !isAllowedHost(cleanMediaFire, [
+        'mediafire.com', 'www.mediafire.com',
+      ])) {
         setError(
           'Link MediaFire tidak valid. Gunakan link MediaFire resmi.'
         );
         return;
       }
 
-      if (!cleanGitHub) {
-        setError(
-          'Link GitHub wajib diisi.'
-        );
-        return;
-      }
-
-      if (
-        !isAllowedHost(cleanGitHub, [
-          'github.com',
-          'www.github.com',
-        ])
-      ) {
+      if (cleanGitHub && !isAllowedHost(cleanGitHub, [
+        'github.com', 'www.github.com',
+      ])) {
         setError(
           'Link GitHub tidak valid. Gunakan link GitHub resmi.'
         );
+        return;
+      }
+    }
+
+    if (kind === 'Script') {
+      if (cleanPreviewUrls.some((url) => !isValidHttpUrl(url))) {
+        setError('Semua URL preview harus berupa URL HTTP/HTTPS yang valid.');
+        return;
+      }
+      const selectedFiles = [...(thumbnailFile ? [thumbnailFile] : []), ...previewFiles];
+      if (selectedFiles.some((file) => !file.type.startsWith('image/'))) {
+        setError('File thumbnail/preview harus berupa gambar.');
+        return;
+      }
+      if (selectedFiles.some((file) => file.size > 5 * 1024 * 1024)) {
+        setError('Ukuran setiap gambar maksimal 3 MB.');
         return;
       }
     }
@@ -374,6 +378,34 @@ export default function Upload() {
 
     try {
       const firestore = db;
+      let finalThumbnailUrl = cleanThumbnail || '';
+      let finalPreviewImageUrls = [...cleanPreviewUrls];
+      if (kind === 'Script' && (thumbnailFile || previewFiles.length > 0)) {
+        const token = await user.getIdToken();
+        const uploadImage = async (file: File): Promise<string> => {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = String(reader.result || '');
+              const comma = result.indexOf(',');
+              if (comma < 0) reject(new Error('Gagal membaca file gambar.'));
+              else resolve(result.slice(comma + 1));
+            };
+            reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+            reader.readAsDataURL(file);
+          });
+          const response = await fetch('/api/upload-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ image: base64, name: file.name, contentType: file.type }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.url) throw new Error(result.message || 'Upload gambar ke ImgBB gagal.');
+          return String(result.url);
+        };
+        if (thumbnailFile) finalThumbnailUrl = await uploadImage(thumbnailFile);
+        for (const file of previewFiles) finalPreviewImageUrls.push(await uploadImage(file));
+      }
 
       const baseData = {
         resourceType: kind,
@@ -381,7 +413,7 @@ export default function Upload() {
         title: cleanTitle,
 
         thumbnailUrl:
-          cleanThumbnail || null,
+          finalThumbnailUrl || null,
 
         description: cleanDescription,
 
@@ -399,7 +431,6 @@ export default function Upload() {
         ownerEmail:
           user.email || null,
 
-        sourceCode: cleanSourceCode,
 
         status: 'pending',
 
@@ -428,7 +459,8 @@ export default function Upload() {
               cleanMediaFire,
 
             githubUrl:
-              cleanGitHub,
+              cleanGitHub || null,
+            previewImageUrls: finalPreviewImageUrls,
           }
         );
       }
@@ -442,6 +474,7 @@ export default function Upload() {
             snippetType,
 
             language: cleanLanguage,
+            sourceCode: cleanSourceCode,
           }
         );
       }
@@ -451,6 +484,7 @@ export default function Upload() {
           collection(firestore, 'scripts'),
           {
             ...baseData,
+            sourceCode: cleanSourceCode,
           }
         );
       }
@@ -461,6 +495,9 @@ export default function Upload() {
 
       setTitle('');
       setThumbnailUrl('');
+      setThumbnailFile(null);
+      setPreviewImageUrlsText('');
+      setPreviewFiles([]);
       setAuthor('');
       setDescription('');
       setLanguage('');
@@ -652,10 +689,27 @@ export default function Upload() {
                     />
                   </div>
 
-                  <p className="mt-2 text-xs text-zinc-700">
-                    Upload ImgBB akan kita sambungkan setelah
-                    form dasar selesai.
-                  </p>
+                  {kind === 'Script' && (
+                    <div className="mt-3">
+                      <span className="mb-2 block text-xs text-zinc-500">Atau pilih thumbnail dari galeri (maks. 3 MB)</span>
+                      <input type="file" accept="image/*" onChange={(e) => setThumbnailFile(e.target.files?.[0] || null)} className="block w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-white" />
+                      {thumbnailFile && <p className="mt-1 text-xs text-zinc-400">Dipilih: {thumbnailFile.name}</p>}
+                    </div>
+                  )}
+                </label>
+              </div>
+            )}
+
+            {kind === 'Script' && (
+              <div className="sm:col-span-2 rounded-2xl border border-white/8 bg-black/15 p-4">
+                <label className="block">
+                  <span className="mb-2 block text-xs text-zinc-500">Preview Image URLs (optional, pisahkan dengan baris baru)</span>
+                  <textarea value={previewImageUrlsText} onChange={(e) => setPreviewImageUrlsText(e.target.value)} placeholder="https://.../preview.png" className="w-full rounded-xl border border-white/8 bg-black/25 p-3 text-sm text-white outline-none placeholder:text-zinc-700 focus:border-white/20" rows={2} />
+                </label>
+                <label className="mt-4 block">
+                  <span className="mb-2 block text-xs text-zinc-500">Atau pilih beberapa preview dari galeri (maks. 3 MB/gambar)</span>
+                  <input type="file" accept="image/*" multiple onChange={(e) => setPreviewFiles(Array.from(e.target.files || []))} className="block w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-white" />
+                  {previewFiles.length > 0 && <p className="mt-2 text-xs text-zinc-400">{previewFiles.length} gambar dipilih</p>}
                 </label>
               </div>
             )}
@@ -773,13 +827,12 @@ export default function Upload() {
                     label="MediaFire Download URL"
                     value={mediafireUrl}
                     onChange={setMediafireUrl}
-                    placeholder="https://www.mediafire.com/..."
-                    required
+                    placeholder="https://www.mediafire.com/... (optional)"
                   />
 
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-700">
                     <Link2 size={12} />
-                    Wajib menggunakan domain MediaFire.
+                    Opsional; jika diisi harus menggunakan domain MediaFire.
                   </p>
                 </div>
 
@@ -788,33 +841,23 @@ export default function Upload() {
                     label="GitHub Repository URL"
                     value={githubUrl}
                     onChange={setGithubUrl}
-                    placeholder="https://github.com/username/repository"
-                    required
+                    placeholder="https://github.com/username/repository (optional)"
                   />
 
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-700">
                     <ExternalLink size={12} />
-                    Wajib menggunakan domain GitHub.
+                    Opsional; jika diisi harus menggunakan domain GitHub.
                   </p>
                 </div>
               </>
             )}
 
-            <div className="sm:col-span-2">
-              <TextArea
-                label="Source Code"
-                value={sourceCode}
-                onChange={setSourceCode}
-                placeholder="Paste your source code here..."
-                code
-                required
-              />
-
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-700">
-                <Code2 size={12} />
-                Maksimal 200.000 karakter.
-              </p>
-            </div>
+            {kind !== 'Script' && (
+              <div className="sm:col-span-2">
+                <TextArea label="Source Code" value={sourceCode} onChange={setSourceCode} placeholder="Paste your source code here..." code required />
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-700"><Code2 size={12} />Maksimal 200.000 karakter.</p>
+              </div>
+            )}
           </div>
 
           {error && (

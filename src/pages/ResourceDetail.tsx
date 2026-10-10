@@ -169,7 +169,9 @@ export default function ResourceDetail() {
             data.language ?? '',
 
           sourceCode:
-            data.sourceCode ?? '',
+            data.sourceCode ?? undefined,
+
+          previewImageUrls: Array.isArray(data.previewImageUrls) ? data.previewImageUrls.filter((url: unknown) => typeof url === 'string') : [],
 
           scriptType:
             data.scriptType,
@@ -546,8 +548,8 @@ export default function ResourceDetail() {
           </section>
         )}
 
-        {/* Code */}
-        <section className="mt-5 glass min-w-0 overflow-hidden rounded-3xl">
+        {/* Script is link-based; source code remains for Snippet/Baileys only. */}
+        {resource.kind !== 'Script' && <section className="mt-5 glass min-w-0 overflow-hidden rounded-3xl">
           <div className="flex flex-col gap-3 border-b border-white/6 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div>
               <div className="flex items-center gap-2">
@@ -590,7 +592,20 @@ export default function ResourceDetail() {
               </code>
             </pre>
           </div>
-        </section>
+        </section>}
+
+        {resource.kind === 'Script' && resource.previewImageUrls && resource.previewImageUrls.length > 0 && (
+          <section className="mt-5 glass rounded-3xl p-5 sm:p-6">
+            <h2 className="text-sm font-semibold text-zinc-200">Preview Images</h2>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {resource.previewImageUrls.map((url, index) => (
+                <a key={`${url}-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                  <img src={url} alt={`${resource.title} preview ${index + 1}`} loading="lazy" className="max-h-[420px] w-full object-contain" />
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </Shell>
   );
