@@ -352,8 +352,8 @@ export default function Upload() {
         setError('File thumbnail/preview harus berupa gambar.');
         return;
       }
-      if (selectedFiles.some((file) => file.size > 5 * 1024 * 1024)) {
-        setError('Ukuran setiap gambar maksimal 3 MB.');
+      if (selectedFiles.some((file) => file.size > 5 * 5120 * 5120)) {
+        setError('Ukuran setiap gambar maksimal 5 MB.');
         return;
       }
     }
@@ -390,9 +390,9 @@ export default function Upload() {
             throw new Error(`${file.name}: file bukan gambar.`);
           }
 
-          if (file.size > 1024 * 1024) {
+          if (file.size > 5120 * 5120) {
             throw new Error(
-              `${file.name}: ukuran maksimal 1 MB. Kompres gambar lalu coba lagi.`
+              `${file.name}: ukuran maksimal 5 MB. Kompres gambar lalu coba lagi.`
             );
           }
 
