@@ -91,9 +91,9 @@ export default async function handler(req: Request, res: Response) {
     }
 
     // Batasi file asli sekitar 1 MB agar payload tidak terlalu besar.
-    if (image.length > 1.5 * 1024 * 1024) {
+    if (image.length > 1.5 * 5120 * 5120) {
       return res.status(413).json({
-        message: "Gambar terlalu besar. Maksimal sekitar 1 MB per gambar.",
+        message: "Gambar terlalu besar. Maksimal sekitar 5 MB per gambar.",
       });
     }
 
