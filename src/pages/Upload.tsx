@@ -374,87 +374,103 @@ export default function Upload() {
       }
     }
 
-    setSubmitting(true);
+        setSubmitting(true);
 
     try {
       const firestore = db;
+
       let finalThumbnailUrl = cleanThumbnail || '';
       let finalPreviewImageUrls = [...cleanPreviewUrls];
+
       if (kind === 'Script' && (thumbnailFile || previewFiles.length > 0)) {
         const token = await user.getIdToken();
+
         const uploadImage = async (file: File): Promise<string> => {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("File yang dipilih bukan gambar.");
-  }
+          if (!file.type.startsWith('image/')) {
+            throw new Error(`${file.name}: file bukan gambar.`);
+          }
 
-  if (file.size > 1024 * 1024) {
-    throw new Error(
-      `${file.name}: ukuran maksimal 1 MB. Kompres gambar lalu coba lagi.`
-    );
-  }
+          if (file.size > 1024 * 1024) {
+            throw new Error(
+              `${file.name}: ukuran maksimal 1 MB. Kompres gambar lalu coba lagi.`
+            );
+          }
 
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
 
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      const comma = result.indexOf(",");
+            reader.onload = () => {
+              const result = String(reader.result || '');
+              const comma = result.indexOf(',');
 
-      if (comma < 0) {
-        reject(new Error("Gagal membaca file gambar."));
-      } else {
-        resolve(result.slice(comma + 1));
+              if (comma === -1) {
+                reject(new Error('Gagal membaca file gambar.'));
+              } else {
+                resolve(result.slice(comma + 1));
+              }
+            };
+
+            reader.onerror = () => {
+              reject(new Error('Gagal membaca file gambar.'));
+            };
+
+            reader.readAsDataURL(file);
+          });
+
+          const controller = new AbortController();
+          const timeout = window.setTimeout(
+            () => controller.abort(),
+            25000
+          );
+
+          try {
+            const response = await fetch('/api/upload-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                image: base64,
+                name: file.name,
+                contentType: file.type,
+              }),
+              signal: controller.signal,
+            });
+
+            const result = await response.json().catch(() => ({}));
+
+            if (!response.ok || typeof result.url !== 'string') {
+              throw new Error(
+                typeof result.message === 'string'
+                  ? result.message
+                  : `Upload gambar gagal (HTTP ${response.status}).`
+              );
+            }
+
+            return result.url;
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+              throw new Error(
+                'Upload gambar timeout. Coba gambar lebih kecil.'
+              );
+            }
+
+            throw error;
+          } finally {
+            window.clearTimeout(timeout);
+          }
+        };
+
+        if (thumbnailFile) {
+          finalThumbnailUrl = await uploadImage(thumbnailFile);
+        }
+
+        for (const file of previewFiles) {
+          const uploadedUrl = await uploadImage(file);
+          finalPreviewImageUrls.push(uploadedUrl);
+        }
       }
-    };
-
-    reader.onerror = () =>
-      reject(new Error("Gagal membaca file gambar."));
-
-    reader.readAsDataURL(file);
-  });
-
-  const token = await user!.getIdToken();
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 25000);
-
-  try {
-    const response = await fetch("/api/upload-image", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        image: base64,
-        name: file.name,
-        contentType: file.type,
-      }),
-      signal: controller.signal,
-    });
-
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok || typeof result.url !== "string") {
-      throw new Error(
-        typeof result.message === "string"
-          ? result.message
-          : `Upload gagal (HTTP ${response.status}).`
-      );
-    }
-
-    return result.url;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(
-        "Upload gambar timeout. Coba gambar lebih kecil atau jaringan lain."
-      );
-    }
-
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-};
 
       const baseData = {
         resourceType: kind,
