@@ -4,10 +4,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
+  updateDoc,
   where,
   type DocumentData,
 } from 'firebase/firestore';
@@ -19,9 +22,11 @@ import {
   FileCode2,
   Loader2,
   LogOut,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   UserRound,
 } from 'lucide-react';
@@ -105,6 +110,12 @@ export default function Dashboard() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   async function loadDashboard(currentUser: User, showLoader = false) {
     if (!db) {
       setError('Firebase Firestore belum terkonfigurasi.');
@@ -122,13 +133,15 @@ export default function Dashboard() {
         getDocs(
           query(
             collection(db, 'scripts'),
-            where('ownerId', '==', currentUser.uid)
-          )
+            where('ownerId', '==', currentUser.uid),
+          ),
         ),
       ]);
 
       if (profileSnapshot.exists()) {
         setProfile(profileSnapshot.data() as Profile);
+      } else {
+        setProfile(null);
       }
 
       const items: Resource[] = resourceSnapshot.docs.map((item) => {
@@ -150,10 +163,12 @@ export default function Dashboard() {
       items.sort((a, b) => {
         const getTime = (item: Resource) => {
           const value = item.createdAt;
+
           if (!value) return 0;
 
           try {
             if (value instanceof Date) return value.getTime();
+
             if (typeof value.toDate === 'function') {
               return value.toDate().getTime();
             }
@@ -171,7 +186,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Dashboard load error:', err);
       setError(
-        'Gagal memuat dashboard. Periksa koneksi dan izin baca Firestore.'
+        'Gagal memuat dashboard. Periksa koneksi dan izin baca Firestore.',
       );
     } finally {
       setLoading(false);
@@ -188,6 +203,7 @@ export default function Dashboard() {
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
+        setUser(null);
         navigate('/login', { replace: true });
         return;
       }
@@ -199,16 +215,18 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [navigate]);
 
-  const stats = useMemo(() => {
-    return resources.reduce(
-      (result, resource) => {
-        result.views += Number(resource.views ?? 0);
-        result.downloads += Number(resource.downloads ?? 0);
-        return result;
-      },
-      { resources: resources.length, views: 0, downloads: 0 }
-    );
-  }, [resources]);
+  const stats = useMemo(
+    () =>
+      resources.reduce(
+        (result, resource) => {
+          result.views += Number(resource.views ?? 0);
+          result.downloads += Number(resource.downloads ?? 0);
+          return result;
+        },
+        { resources: resources.length, views: 0, downloads: 0 },
+      ),
+    [resources],
+  );
 
   const counts = useMemo(
     () => ({
@@ -217,7 +235,7 @@ export default function Dashboard() {
       approved: resources.filter((item) => item.status === 'approved').length,
       rejected: resources.filter((item) => item.status === 'rejected').length,
     }),
-    [resources]
+    [resources],
   );
 
   const filteredResources = useMemo(
@@ -225,7 +243,7 @@ export default function Dashboard() {
       filter === 'all'
         ? resources
         : resources.filter((item) => item.status === filter),
-    [resources, filter]
+    [resources, filter],
   );
 
   async function handleLogout() {
@@ -239,6 +257,128 @@ export default function Dashboard() {
       console.error('Logout error:', err);
       setError('Logout gagal. Silakan coba lagi.');
       setLoggingOut(false);
+    }
+  }
+
+  function startEditing(resource: Resource) {
+    setEditingId(resource.id);
+    setEditTitle(resource.title || '');
+    setEditDescription(resource.description || '');
+    setError('');
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditTitle('');
+    setEditDescription('');
+  }
+
+  async function saveEdit(resource: Resource) {
+    if (!db || !user || savingEdit) return;
+
+    const title = editTitle.trim();
+    const description = editDescription.trim();
+
+    if (title.length < 3 || title.length > 120) {
+      setError('Nama resource harus terdiri dari 3–120 karakter.');
+      return;
+    }
+
+    if (!description || description.length > 5000) {
+      setError('Deskripsi wajib diisi dan maksimal 5.000 karakter.');
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+      setError('');
+
+      const resourceRef = doc(db, 'scripts', resource.id);
+      const snapshot = await getDoc(resourceRef);
+
+      if (!snapshot.exists()) {
+        throw new Error('Resource sudah tidak tersedia.');
+      }
+
+      if (snapshot.data().ownerId !== user.uid) {
+        throw new Error('Kamu hanya dapat mengedit resource milikmu.');
+      }
+
+      await updateDoc(resourceRef, {
+        title,
+        description,
+        status: 'pending',
+        updatedAt: serverTimestamp(),
+      });
+
+      setResources((previous) =>
+        previous.map((item) =>
+          item.id === resource.id
+            ? { ...item, title, description, status: 'pending' }
+            : item,
+        ),
+      );
+
+      cancelEditing();
+    } catch (err) {
+      console.error('Edit resource error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal mengedit resource. Periksa izin Firestore.',
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function deleteResource(resource: Resource) {
+    if (!db || !user || deletingId) return;
+
+    const confirmed = window.confirm(
+      `Yakin ingin menghapus "${resource.title || 'resource ini'}"? Tindakan ini tidak dapat dibatalkan.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(resource.id);
+      setError('');
+
+      const resourceRef = doc(db, 'scripts', resource.id);
+      const snapshot = await getDoc(resourceRef);
+
+      if (!snapshot.exists()) {
+        setResources((previous) =>
+          previous.filter((item) => item.id !== resource.id),
+        );
+        return;
+      }
+
+      const token = await user.getIdTokenResult(true);
+      const isAdmin = token.claims.admin === true;
+      const isOwner = snapshot.data().ownerId === user.uid;
+
+      if (!isOwner && !isAdmin) {
+        throw new Error('Kamu tidak memiliki izin menghapus resource ini.');
+      }
+
+      await deleteDoc(resourceRef);
+
+      setResources((previous) =>
+        previous.filter((item) => item.id !== resource.id),
+      );
+
+      if (editingId === resource.id) cancelEditing();
+    } catch (err) {
+      console.error('Delete resource error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menghapus resource. Periksa izin Firestore.',
+      );
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -279,7 +419,9 @@ export default function Dashboard() {
 
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-sm text-zinc-500">Selamat datang kembali,</p>
+                <p className="text-sm text-zinc-500">
+                  Selamat datang kembali,
+                </p>
                 <h1 className="mt-1 break-words text-4xl font-semibold tracking-tight sm:text-6xl">
                   {displayName}
                   <span className="text-zinc-700">.</span>
@@ -317,7 +459,10 @@ export default function Dashboard() {
         </section>
 
         {error && (
-          <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-300">
+          <div
+            role="alert"
+            className="mt-6 rounded-2xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-300"
+          >
             {error}
           </div>
         )}
@@ -338,7 +483,9 @@ export default function Dashboard() {
               )}
 
               <div className="min-w-0">
-                <h2 className="truncate text-xl font-semibold">{displayName}</h2>
+                <h2 className="truncate text-xl font-semibold">
+                  {displayName}
+                </h2>
                 <p className="mt-1 truncate text-sm text-zinc-500">{email}</p>
               </div>
             </div>
@@ -355,7 +502,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={() => void handleLogout()}
               disabled={loggingOut}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
@@ -401,6 +548,7 @@ export default function Dashboard() {
                 Daftar ini diambil dari koleksi Firestore milik akunmu.
               </p>
             </div>
+
             <span className="text-sm text-zinc-500">
               {resources.length} resource
             </span>
@@ -436,16 +584,19 @@ export default function Dashboard() {
               <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white/5">
                 <Code2 size={22} className="text-zinc-400" />
               </div>
+
               <h3 className="mt-4 font-semibold">
                 {resources.length === 0
                   ? 'Belum ada resource'
                   : 'Tidak ada resource di filter ini'}
               </h3>
+
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
                 {resources.length === 0
                   ? 'Resource yang kamu upload akan muncul di sini beserta status review-nya.'
                   : 'Coba pilih status yang lain untuk melihat resource milikmu.'}
               </p>
+
               {resources.length === 0 && (
                 <Link
                   to="/scripts/upload"
@@ -467,12 +618,13 @@ export default function Dashboard() {
                     key={resource.id}
                     className="glass rounded-2xl p-4 sm:p-5"
                   >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-400">
                             {type}
                           </span>
+
                           <span
                             className={`rounded-lg border px-2 py-1 text-[11px] ${
                               status === 'approved'
@@ -489,19 +641,114 @@ export default function Dashboard() {
                         <h3 className="mt-3 break-words text-base font-semibold">
                           {resource.title || 'Tanpa judul'}
                         </h3>
-                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-500">
+
+                        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-500">
                           {resource.description || 'Tidak ada deskripsi.'}
                         </p>
+
                         <p className="mt-2 text-xs text-zinc-600">
                           Dibuat: {formatDate(resource.createdAt)}
                         </p>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(resource)}
+                            disabled={Boolean(editingId) || Boolean(deletingId)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/10 disabled:opacity-40"
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void deleteResource(resource)}
+                            disabled={Boolean(deletingId) || Boolean(editingId)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 disabled:opacity-40"
+                          >
+                            {deletingId === resource.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+                            Hapus
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 sm:min-w-40">
-                        <MiniStat icon={<Eye size={14} />} value={resource.views ?? 0} label="Views" />
-                        <MiniStat icon={<Download size={14} />} value={resource.downloads ?? 0} label="Downloads" />
+                        <MiniStat
+                          icon={<Eye size={14} />}
+                          value={resource.views ?? 0}
+                          label="Views"
+                        />
+                        <MiniStat
+                          icon={<Download size={14} />}
+                          value={resource.downloads ?? 0}
+                          label="Downloads"
+                        />
                       </div>
                     </div>
+
+                    {editingId === resource.id && (
+                      <div className="mt-5 border-t border-white/10 pt-5">
+                        <h4 className="mb-4 font-semibold">Edit resource</h4>
+
+                        <label
+                          htmlFor={`edit-title-${resource.id}`}
+                          className="mb-2 block text-xs text-zinc-400"
+                        >
+                          Nama resource
+                        </label>
+
+                        <input
+                          id={`edit-title-${resource.id}`}
+                          value={editTitle}
+                          onChange={(event) => setEditTitle(event.target.value)}
+                          maxLength={120}
+                          className="mb-4 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
+                        />
+
+                        <label
+                          htmlFor={`edit-description-${resource.id}`}
+                          className="mb-2 block text-xs text-zinc-400"
+                        >
+                          Deskripsi
+                        </label>
+
+                        <textarea
+                          id={`edit-description-${resource.id}`}
+                          value={editDescription}
+                          onChange={(event) =>
+                            setEditDescription(event.target.value)
+                          }
+                          maxLength={5000}
+                          rows={4}
+                          className="w-full resize-y rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
+                        />
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveEdit(resource)}
+                            disabled={savingEdit}
+                            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
+                          >
+                            {savingEdit ? 'Menyimpan...' : 'Simpan perubahan'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            disabled={savingEdit}
+                            className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 disabled:opacity-50"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </article>
                 );
               })}
