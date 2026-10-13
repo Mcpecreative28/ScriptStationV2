@@ -80,6 +80,7 @@ export default function Login() {
         user.uid
       );
 
+      
       await setDoc(
         userRef,
         {
@@ -87,7 +88,6 @@ export default function Login() {
           displayName: user.displayName ?? '',
           email: user.email ?? '',
           photoURL: user.photoURL ?? '',
-          role: 'user',
           updatedAt: serverTimestamp(),
         },
         {
