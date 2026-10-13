@@ -82,12 +82,17 @@ return;
       // SAVE USER TO FIRESTORE
       // =========================
 
+      const firestore = db;
+
+        if (!firestore) {
+        throw new Error('Firestore tidak tersedia.');
+      }
+
       const userRef = doc(
-        db,
+        firestore,
         'users',
         user.uid
       );
-
       
       await setDoc(
         userRef,
