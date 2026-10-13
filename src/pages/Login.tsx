@@ -65,7 +65,9 @@ export default function Login() {
       const user: User = result.user;
       const tokenResult = await user.getIdTokenResult(true);
 
-console.log('ADMIN CLAIM:', tokenResult.claims.admin);
+setError(
+  `ADMIN CLAIM: ${String(tokenResult.claims.admin)}`
+);
 
       console.log('GOOGLE LOGIN SUCCESS:', {
         uid: user.uid,
