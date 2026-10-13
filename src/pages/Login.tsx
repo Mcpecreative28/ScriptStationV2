@@ -82,14 +82,8 @@ return;
       // SAVE USER TO FIRESTORE
       // =========================
 
-      const firestore = db;
-
-        if (!firestore) {
-        throw new Error('Firestore tidak tersedia.');
-      }
-
       const userRef = doc(
-        firestore,
+        db!,
         'users',
         user.uid
       );
