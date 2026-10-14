@@ -117,25 +117,32 @@ export default function Home() {
       setLoadError('');
 
       try {
-        const resourcesQuery = query(
-          collection(db, 'scripts'),
-          where('status', '==', 'approved'),
-          orderBy('createdAt', 'desc'),
-          limit(6),
-        );
+        
+const resourcesQuery = query(
+  collection(db, 'scripts'),
+  where('status', '==', 'approved'),
+  limit(6),
+);
 
-        const snapshot = await getDocs(resourcesQuery);
+const snapshot = await getDocs(resourcesQuery);
 
-        const latestResources: HomeResource[] =
-          snapshot.docs.map((item) => ({
-            ...(item.data() as Omit<HomeResource, 'id'>),
-            id: item.id,
-          }));
+const latestResources: HomeResource[] =
+  snapshot.docs.map((item) => ({
+    ...(item.data() as Omit<HomeResource, 'id'>),
+    id: item.id,
+  }));
 
-        if (!active) return;
+latestResources.sort((a, b) => {
+  const timeA = a.createdAt?.toMillis?.() ?? 0;
+  const timeB = b.createdAt?.toMillis?.() ?? 0;
 
-        setResources(latestResources);
-        setTotalResources(latestResources.length);
+  return timeB - timeA;
+});
+
+if (!active) return;
+
+setResources(latestResources);
+setTotalResources(latestResources.length);
       } catch (error) {
         console.error(error);
 
