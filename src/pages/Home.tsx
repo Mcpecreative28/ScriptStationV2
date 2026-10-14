@@ -394,36 +394,36 @@ const totalDownloads = siteStats?.totalDownloads ?? 0;
             </div>
           </div>
 
+          
           <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            
-<Stat
-  icon={<Database size={20} />}
-  value={statsLoading ? '...' : formatNumber(totalResources)}
-  label="Total Resources"
-/>
+            <Stat
+              icon={<Database size={20} />}
+              value={statsLoading ? '...' : formatNumber(totalResources)}
+              label="Total Resources"
+            />
 
-<Stat
-  icon={<Users size={20} />}
-  value={statsLoading ? '...' : formatNumber(siteStats?.totalUsers ?? 0)}
-  label="Total Users"
-/>
+            <Stat
+              icon={<Users size={20} />}
+              value={statsLoading ? '...' : formatNumber(siteStats?.totalUsers ?? 0)}
+              label="Total Users"
+            />
 
-<Stat
-  icon={<Eye size={20} />}
-  value={statsLoading ? '...' : formatNumber(totalViews)}
-  label="Total Views"
-/>
+            <Stat
+              icon={<Eye size={20} />}
+              value={statsLoading ? '...' : formatNumber(totalViews)}
+              label="Total Views"
+            />
 
-<Stat
-  icon={<Download size={20} />}
-  value={statsLoading ? '...' : formatNumber(totalDownloads)}
-  label="Total Downloads"
-/>
+            <Stat
+              icon={<Download size={20} />}
+              value={statsLoading ? '...' : formatNumber(totalDownloads)}
+              label="Total Downloads"
+            />
+          </div>
 
           <p className="mt-3 text-xs leading-5 text-zinc-600">
-            Statistik resource, views, dan downloads dihitung dari
-            resource berstatus approved yang dapat dibaca. Total
-            pengguna akan dihubungkan melalui endpoint server yang aman.
+            Statistik dihitung dari resource berstatus approved dan data
+            pengguna yang tercatat di server.
           </p>
         </section>
 
