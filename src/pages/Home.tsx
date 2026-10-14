@@ -50,6 +50,15 @@ type HomeResource = {
   createdAt?: {
     toMillis?: () => number;
   };
+  
+type SiteStats = {
+  totalUsers: number;
+  totalResources: number;
+  totalViews: number;
+  totalDownloads: number;
+  averageRating: number;
+  totalRatings: number;
+  };
 };
 
 function Stat({
@@ -271,18 +280,69 @@ export default function Home() {
       active = false;
     };
   }, []);
+  
+const [siteStats, setSiteStats] = useState<SiteStats | null>(null);
+const [statsLoading, setStatsLoading] = useState(true);
 
-  const totalResources = resources.length;
+useEffect(() => {
+  let active = true;
 
-  const totalViews = resources.reduce(
-    (total, resource) => total + (resource.views ?? 0),
-    0,
-  );
+  async function loadSiteStats() {
+    try {
+      const response = await fetch('/api/site-stats', {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+      });
 
-  const totalDownloads = resources.reduce(
-    (total, resource) => total + (resource.downloads ?? 0),
-    0,
-  );
+      if (!response.ok) {
+        throw new Error('Gagal mengambil statistik situs.');
+      }
+
+      const data = await response.json();
+
+      if (
+        !data.success ||
+        !Number.isFinite(data.totalUsers) ||
+        !Number.isFinite(data.totalResources) ||
+        !Number.isFinite(data.totalViews) ||
+        !Number.isFinite(data.totalDownloads)
+      ) {
+        throw new Error('Format statistik tidak valid.');
+      }
+
+      if (active) {
+        setSiteStats({
+          totalUsers: data.totalUsers,
+          totalResources: data.totalResources,
+          totalViews: data.totalViews,
+          totalDownloads: data.totalDownloads,
+          averageRating: Number(data.averageRating) || 0,
+          totalRatings: Number(data.totalRatings) || 0,
+        });
+      }
+    } catch (error) {
+      console.error('Site stats loading error:', error);
+    } finally {
+      if (active) {
+        setStatsLoading(false);
+      }
+    }
+  }
+
+  void loadSiteStats();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+  
+const totalResources = siteStats?.totalResources ?? resources.length;
+const totalViews = siteStats?.totalViews ?? 0;
+const totalDownloads = siteStats?.totalDownloads ?? 0;
 
   const trendingResources = [...resources]
     .sort((a, b) => getPopularity(b) - getPopularity(a))
@@ -335,30 +395,30 @@ export default function Home() {
           </div>
 
           <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat
-              icon={<Database size={20} />}
-              value={loading ? '...' : formatNumber(totalResources)}
-              label="Total Resources"
-            />
+            
+<Stat
+  icon={<Database size={20} />}
+  value={statsLoading ? '...' : formatNumber(totalResources)}
+  label="Total Resources"
+/>
 
-            <Stat
-              icon={<Users size={20} />}
-              value="—"
-              label="Total Users"
-            />
+<Stat
+  icon={<Users size={20} />}
+  value={statsLoading ? '...' : formatNumber(siteStats?.totalUsers ?? 0)}
+  label="Total Users"
+/>
 
-            <Stat
-              icon={<Eye size={20} />}
-              value={loading ? '...' : formatNumber(totalViews)}
-              label="Total Views"
-            />
+<Stat
+  icon={<Eye size={20} />}
+  value={statsLoading ? '...' : formatNumber(totalViews)}
+  label="Total Views"
+/>
 
-            <Stat
-              icon={<Download size={20} />}
-              value={loading ? '...' : formatNumber(totalDownloads)}
-              label="Total Downloads"
-            />
-          </div>
+<Stat
+  icon={<Download size={20} />}
+  value={statsLoading ? '...' : formatNumber(totalDownloads)}
+  label="Total Downloads"
+/>
 
           <p className="mt-3 text-xs leading-5 text-zinc-600">
             Statistik resource, views, dan downloads dihitung dari
