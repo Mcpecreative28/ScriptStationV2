@@ -50,7 +50,8 @@ type HomeResource = {
   createdAt?: {
     toMillis?: () => number;
   };
-  
+};
+
 type SiteStats = {
   totalUsers: number;
   totalResources: number;
@@ -59,7 +60,6 @@ type SiteStats = {
   averageRating: number;
   totalRatings: number;
   };
-};
 
 function Stat({
   icon,
