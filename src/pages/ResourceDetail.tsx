@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  Star,
   UserRound,
 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -78,6 +79,10 @@ export default function ResourceDetail() {
 
   const [copied, setCopied] =
     useState(false);
+    
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingMessage, setRatingMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -355,6 +360,76 @@ export default function ResourceDetail() {
       console.warn('Download tracking error:', error);
     }
   }
+  
+  
+async function submitRating() {
+  const user = auth?.currentUser;
+
+  if (!user) {
+    setRatingMessage('Login dengan Google terlebih dahulu untuk memberi rating.');
+    return;
+  }
+
+  if (!id || resource?.status !== 'approved') {
+    setRatingMessage('Resource tidak tersedia untuk diberi rating.');
+    return;
+  }
+
+  if (selectedRating < 1 || selectedRating > 5) {
+    setRatingMessage('Pilih 1 sampai 5 bintang terlebih dahulu.');
+    return;
+  }
+
+  setSubmittingRating(true);
+  setRatingMessage('');
+
+  try {
+    const token = await user.getIdToken();
+
+    const response = await fetch('/api/resource-rating', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        resourceId: id,
+        rating: selectedRating,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || 'Rating gagal disimpan.'
+      );
+    }
+
+    setResource((current) => {
+      if (!current || current.id !== id) return current;
+
+      return {
+        ...current,
+        rating: Number(
+          result.averageRating ?? current.rating ?? 0
+        ),
+      };
+    });
+
+    setRatingMessage('Rating berhasil disimpan!');
+  } catch (error) {
+    console.error('RATING_ERROR:', error);
+
+    setRatingMessage(
+      error instanceof Error
+        ? error.message
+        : 'Terjadi kesalahan saat menyimpan rating.'
+    );
+  } finally {
+    setSubmittingRating(false);
+  }
+}
 
   async function copyCode() {
     if (!resource?.sourceCode) {
@@ -676,6 +751,76 @@ export default function ResourceDetail() {
             </div>
           </section>
         )}
+        
+<section className="mt-5 glass rounded-3xl p-5 sm:p-6">
+  <div className="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 className="text-sm font-semibold text-zinc-200">
+        Rating Resource
+      </h2>
+
+      <p className="mt-1 text-xs text-zinc-500">
+        Berikan penilaian untuk resource ini.
+      </p>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <Star
+        size={19}
+        className="fill-amber-400 text-amber-400"
+      />
+
+      <span className="text-lg font-semibold text-white">
+        {Number(resource.rating ?? 0).toFixed(1)}
+      </span>
+    </div>
+  </div>
+
+  <div className="mt-5 flex flex-wrap gap-2">
+    {[1, 2, 3, 4, 5].map((value) => (
+      <button
+        key={value}
+        type="button"
+        aria-label={`Beri rating ${value} bintang`}
+        aria-pressed={selectedRating === value}
+        disabled={submittingRating}
+        onClick={() => setSelectedRating(value)}
+        className="rounded-xl border border-white/10 bg-white/5 p-2.5 transition hover:bg-white/10 disabled:opacity-50"
+      >
+        <Star
+          size={25}
+          className={
+            value <= selectedRating
+              ? 'fill-amber-400 text-amber-400'
+              : 'text-zinc-500'
+          }
+        />
+      </button>
+    ))}
+  </div>
+
+  <button
+    type="button"
+    onClick={() => void submitRating()}
+    disabled={submittingRating || selectedRating === 0}
+    className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {submittingRating && (
+      <Loader2 size={16} className="animate-spin" />
+    )}
+
+    {submittingRating ? 'Menyimpan...' : 'Kirim Rating'}
+  </button>
+
+  {ratingMessage && (
+    <p
+      role="status"
+      className="mt-3 text-sm text-zinc-300"
+    >
+      {ratingMessage}
+    </p>
+  )}
+</section>
 
         {/* Script is link-based; source code remains for Snippet/Baileys only. */}
         {resource.kind !== 'Script' && <section className="mt-5 glass min-w-0 overflow-hidden rounded-3xl">
