@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-
 import Home from './pages/Home';
 import Listing from './pages/Listing';
 import ResourceDetail from './pages/ResourceDetail';
@@ -8,8 +7,9 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
 import Search from './pages/Search';
+import Rooms from './pages/Rooms';
+import Marketplace from './pages/Marketplace';
 import Placeholder from './pages/Placeholder';
-
 import './index.css';
 
 export default function App() {
@@ -17,83 +17,22 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
-
-        <Route
-          path="/scripts"
-          element={<Listing kind="Script" />}
-        />
-        
-        <Route
-          path="/snippets"
-          element={<Listing kind="Snippet" />}
-        />
-
-        <Route
-          path="/baileys"
-          element={<Listing kind="Baileys" />}
-        />
-
-        <Route
-          path="/snippets/:id"
-          element={<ResourceDetail />}
-        />
-
-        <Route
-          path="/baileys/:id"
-          element={<ResourceDetail />}
-        />
-
-        <Route
-          path="/scripts/:id"
-          element={<ResourceDetail />}
-        />
-
-        <Route
-          path="/scripts/upload"
-          element={<Upload />}
-        />
-
-        <Route
-          path="/snippets/upload"
-          element={<Upload />}
-        />
-
-        <Route
-          path="/baileys/upload"
-          element={<Upload />}
-        />
-
-        <Route
-          path="/login"
-          element={<Login />}
-        />
-
-        <Route
-          path="/dashboard"
-          element={<Dashboard />}
-        />
-
-        <Route
-          path="/search"
-          element={<Search />}
-        />
-
-        <Route
-          path="/rooms"
-          element={<Placeholder title="Public Rooms" />}
-        />
-
-        <Route
-          path="/marketplace"
-          element={<Placeholder title="Marketplace" />}
-        />
-
+        <Route path="/scripts" element={<Listing kind="Script" />} />
+        <Route path="/snippets" element={<Listing kind="Snippet" />} />
+        <Route path="/baileys" element={<Listing kind="Baileys" />} />
+        <Route path="/snippets/:id" element={<ResourceDetail />} />
+        <Route path="/baileys/:id" element={<ResourceDetail />} />
+        <Route path="/scripts/:id" element={<ResourceDetail />} />
+        <Route path="/scripts/upload" element={<Upload />} />
+        <Route path="/snippets/upload" element={<Upload />} />
+        <Route path="/baileys/upload" element={<Upload />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/search" element={<Search />} />
+        <Route path="/rooms" element={<Rooms />} />
+        <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/admin" element={<Admin />} />
-
-        <Route
-          path="*"
-          element={<Placeholder title="404 — Page not found" />}
-        />
+        <Route path="*" element={<Placeholder title="404 — Page not found" />} />
       </Routes>
     </BrowserRouter>
   );
