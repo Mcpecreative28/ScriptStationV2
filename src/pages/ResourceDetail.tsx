@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 
 import Shell from '../components/Shell';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import type { Resource } from '../data/mock';
 
 function getKind(value: unknown): Resource['kind'] {
@@ -234,6 +234,74 @@ export default function ResourceDetail() {
       active = false;
     };
   }, [id]);
+  
+  
+  useEffect(() => {
+    let active = true;
+
+    const unsubscribe = auth
+      ? import('firebase/auth').then(({ onAuthStateChanged }) => {
+          if (!active || !auth) return () => {};
+
+          return onAuthStateChanged(auth, async (user) => {
+            if (
+              !active ||
+              !user ||
+              !id ||
+              resource?.id !== id ||
+              resource.status !== 'approved'
+            ) {
+              return;
+            }
+
+            try {
+              const token = await user.getIdToken();
+
+              if (!active) return;
+
+              const response = await fetch('/api/resource-view', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ resourceId: id }),
+              });
+
+              if (!response.ok) {
+                console.warn(
+                  'View tracking gagal:',
+                  response.status
+                );
+                return;
+              }
+
+              const result = await response.json();
+
+              if (active && result.counted) {
+                setResource((current) => {
+                  if (!current || current.id !== id) {
+                    return current;
+                  }
+
+                  return {
+                    ...current,
+                    views: Number(current.views ?? 0) + 1,
+                  };
+                });
+              }
+            } catch (error) {
+              console.warn('View tracking error:', error);
+            }
+          });
+        })
+      : Promise.resolve(() => {});
+
+    return () => {
+      active = false;
+      void Promise.resolve(unsubscribe).then((stop) => stop());
+    };
+  }, [id, resource?.id, resource?.status]);
 
   async function copyCode() {
     if (!resource?.sourceCode) {
