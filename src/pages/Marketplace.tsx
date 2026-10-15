@@ -84,8 +84,10 @@ export default function Marketplace() {
   const [form, setForm] = useState<ProductForm>(
     emptyForm,
   );
-
+  
   const [saving, setSaving] = useState(false);
+
+  const [showForm, setShowForm] = useState(false);
 
   const [uploadingImage, setUploadingImage] = useState(
     false,
