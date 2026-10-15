@@ -302,6 +302,57 @@ export default function ResourceDetail() {
       void Promise.resolve(unsubscribe).then((stop) => stop());
     };
   }, [id, resource?.id, resource?.status]);
+  
+  
+  async function trackDownload() {
+    const user = auth?.currentUser;
+
+    // Pengunjung tetap boleh membuka link.
+    // Tracking API hanya menerima pengguna yang login.
+    if (!user || !id || resource?.status !== 'approved') {
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+
+      const response = await fetch('/api/resource-download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          resourceId: id,
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(
+          'Download tracking gagal:',
+          response.status
+        );
+        return;
+      }
+
+      const result = await response.json();
+
+      if (result.counted) {
+        setResource((current) => {
+          if (!current || current.id !== id) {
+            return current;
+          }
+
+          return {
+            ...current,
+            downloads: Number(current.downloads ?? 0) + 1,
+          };
+        });
+      }
+    } catch (error) {
+      console.warn('Download tracking error:', error);
+    }
+  }
 
   async function copyCode() {
     if (!resource?.sourceCode) {
@@ -554,8 +605,12 @@ export default function ResourceDetail() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {mediafireValid && (
+                
                 <a
                   href={resource.mediafireUrl!}
+                  onClick={() => {
+                  void trackDownload();
+                  }}
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                   className="group flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 p-4 transition hover:bg-white/10"
