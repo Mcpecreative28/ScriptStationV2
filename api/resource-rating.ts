@@ -4,7 +4,7 @@ import {
   requireApprovedResource,
   sendError,
   FieldValue
-} from "./resource-tracking";
+} from "./resource-tracking.js";
 
 export default async function handler(req: any, res: any) {
   res.setHeader("Cache-Control", "no-store");
