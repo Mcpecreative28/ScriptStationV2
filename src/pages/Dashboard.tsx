@@ -22,6 +22,8 @@ import {
   FileCode2,
   Loader2,
   LogOut,
+  MessageCircle,
+  Store,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -756,7 +758,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="mt-10 grid gap-4 sm:grid-cols-2">
+        <section className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <ActionCard
             href="/scripts/upload"
             icon={<Upload size={20} />}
@@ -768,6 +770,18 @@ export default function Dashboard() {
             icon={<Code2 size={20} />}
             title="Jelajahi Resource"
             description="Lihat resource yang tersedia di ScriptStationV2."
+          />
+          <ActionCard
+            href="/rooms"
+            icon={<MessageCircle size={20} />}
+            title="Global Chat"
+            description="Bergabung dengan diskusi komunitas."
+          />
+          <ActionCard
+            href="/marketplace"
+            icon={<Store size={20} />}
+            title="Marketplace"
+            description="Lihat produk dan tools dari admin."
           />
         </section>
       </main>

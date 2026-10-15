@@ -19,6 +19,7 @@ import {
   Star,
   Clock,
   TrendingUp,
+  Store,
 } from 'lucide-react';
 import {
   collection,
@@ -533,6 +534,22 @@ const totalDownloads = siteStats?.totalDownloads ?? 0;
             )}
           </section>
         ))}
+
+
+        <section className="mt-10 grid gap-4 sm:grid-cols-2">
+          <Link to="/rooms" className="glass group rounded-3xl border border-white/10 p-6 transition hover:border-cyan-300/30 hover:bg-white/[.04]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300/10 text-cyan-200"><MessageCircleCode size={21} /></div>
+            <h2 className="mt-4 text-lg font-semibold">Global Chat</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Diskusi publik bersama komunitas developer.</p>
+            <span className="mt-4 inline-flex items-center gap-2 text-sm text-cyan-200">Buka Rooms <ArrowRight size={15} /></span>
+          </Link>
+          <Link to="/marketplace" className="glass group rounded-3xl border border-white/10 p-6 transition hover:border-indigo-300/30 hover:bg-white/[.04]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-300/10 text-indigo-200"><Store size={21} /></div>
+            <h2 className="mt-4 text-lg font-semibold">Marketplace</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Jelajahi tools, produk, dan resource pilihan.</p>
+            <span className="mt-4 inline-flex items-center gap-2 text-sm text-indigo-200">Jelajahi Marketplace <ArrowRight size={15} /></span>
+          </Link>
+        </section>
 
         <section className="mt-16 grid gap-4 lg:grid-cols-[1.4fr_.6fr]">
           <div className="glass rounded-3xl p-6 sm:p-8">
