@@ -327,11 +327,13 @@ export default function ResourceDetail() {
         }),
       });
 
+      
       if (!response.ok) {
-        console.warn(
-          'Download tracking gagal:',
-          response.status
-        );
+        const message = await response.text();
+          console.error('Download tracking gagal:', {
+          status: response.status,
+          message,
+          });
         return;
       }
 
@@ -639,8 +641,12 @@ export default function ResourceDetail() {
               )}
 
               {githubValid && (
+                
                 <a
                   href={resource.githubUrl!}
+                  onClick={() => {
+                  void trackDownload();
+                  }}
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                   className="group flex items-center justify-between rounded-2xl border border-white/8 bg-white/5 p-4 transition hover:bg-white/10"
