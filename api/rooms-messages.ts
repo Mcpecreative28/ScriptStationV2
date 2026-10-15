@@ -1,7 +1,232 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminServices, requireUser, sendError } from './resource-tracking.js';
 
-const blockedWords = ['kata-kasar-contoh-1', 'kata-kasar-contoh-2'];
+const blockedWords = [
+  'anjing',
+  'anj1ng',
+  'anjink',
+  'anjir',
+  'anjrit',
+  'anjay',
+  'anjeng',
+  'anjg',
+  'anjng',
+  'anjinggg',
+  'anjingggg',
+
+  'bangsat',
+  'bangsad',
+  'bang6at',
+  'bangke',
+  'bangkai',
+  'bangsattt',
+  'bangsadtt',
+
+  'bajingan',
+  'baj1ngan',
+  'bajinganmu',
+  'bajinganlu',
+  'bajingan lo',
+
+  'brengsek',
+  'brengsekk',
+  'brengsekkkk',
+
+  'kontol',
+  'kont0l',
+  'k0ntol',
+  'k0nt0l',
+  'kntl',
+  'kontoll',
+  'kontolmu',
+  'kontol lu',
+  'kontol lo',
+
+  'memek',
+  'mem3k',
+  'm3mek',
+  'mmk',
+  'memekk',
+  'memekmu',
+  'memek lu',
+  'memek lo',
+
+  'ngentot',
+  'ngent0t',
+  'ngentott',
+  'ngentod',
+  'ngntot',
+  'entot',
+  'ent0t',
+
+  'jancok',
+  'janc0k',
+  'jancuk',
+  'jancuq',
+  'jancokk',
+  'dancok',
+  'dancuk',
+  'danc0k',
+  'jancokmu',
+
+  'asu',
+  'asw',
+  'asuu',
+  'asuuu',
+  'asu tenan',
+
+  'tolol',
+  'tololl',
+  'tololmu',
+  'tolol lu',
+  'tolol lo',
+
+  'goblok',
+  'g0blok',
+  'gblk',
+  'goblokk',
+  'goblokmu',
+  'goblok lu',
+  'goblok lo',
+
+  'bego',
+  'beg0',
+  'bego lu',
+  'bego lo',
+
+  'bacot',
+  'bacotmu',
+  'bacot lu',
+  'bacot lo',
+  'bacottt',
+
+  'tai',
+  'taik',
+  'taikk',
+  'taimu',
+  'tai lu',
+  'tai lo',
+
+  'keparat',
+  'keparatt',
+  'kampret',
+  'kamprett',
+  'kampret lu',
+  'bedebah',
+  'laknat',
+  'brengsek lu',
+  'brengsek lo',
+
+  'pukimak',
+  'puki mak',
+  'cibai',
+  'kimak',
+  'pantek',
+  'lancau',
+
+  'fuck',
+  'f u c k',
+  'f.u.c.k',
+  'fck',
+  'fuk',
+  'fukkk',
+  'fucking',
+  'fuckinggg',
+  'fucker',
+  'fuckers',
+  'fuckface',
+  'fuckwit',
+  'fuck off',
+  'fuck you',
+  'fuck u',
+  'f u',
+  'motherfucker',
+  'motherfuckers',
+  'motherfucking',
+
+  'shit',
+  'sh1t',
+  'shyt',
+  'shiit',
+  'shitty',
+  'shithead',
+  'shitface',
+  'bullshit',
+  'dipshit',
+  'dumbshit',
+  'holy shit',
+
+  'bitch',
+  'b1tch',
+  'biatch',
+  'bitches',
+  'son of a bitch',
+  'stupid bitch',
+
+  'bastard',
+  'bastards',
+  'asshole',
+  'assholes',
+  'a s s h o l e',
+  'arsehole',
+  'arseholes',
+  'dickhead',
+  'dickheads',
+  'dumbass',
+  'dumbasses',
+  'jackass',
+  'jackasses',
+  'asswipe',
+  'asshat',
+  'dipstick',
+  'douchebag',
+  'scumbag',
+  'shitbag',
+
+  'cunt',
+  'cunts',
+  'twat',
+  'prick',
+  'wanker',
+  'tosser',
+  'bollocks',
+  'piss off',
+  'pissed off',
+  'goddamn',
+  'dammit',
+  'crap',
+
+  'fucking idiot',
+  'fucking moron',
+  'piece of shit',
+  'piece of crap',
+  'shut the fuck up',
+  'go fuck yourself',
+  'fuck yourself',
+  'you son of a bitch',
+  'you piece of shit',
+];
+
+function normalizeForModeration(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[0-9]/g, (char) => {
+      const replacements: Record<string, string> = {
+        '0': 'o',
+        '1': 'i',
+        '3': 'e',
+        '4': 'a',
+        '5': 's',
+        '7': 't',
+      };
+
+      return replacements[char] ?? char;
+    })
+    .replace(/(.)\1{2,}/g, '$1$1')
+    .replace(/[\s._*-]+/g, ' ')
+    .trim();
+}
 
 function cleanText(value: unknown) {
   if (typeof value !== 'string') return '';
