@@ -825,6 +825,7 @@ export default function Marketplace() {
                 </label>
 
 
+                
                 <label className="block">
                   <span
                     className="
@@ -832,32 +833,26 @@ export default function Marketplace() {
                       block
                       text-sm
                       text-zinc-300
-                    "
-                  >
-                    Kategori *
-                  </span>
+                  "
+                >
+              Kategori *
+              </span>
 
-                  <select
-                    className={inputClass}
-                    value={form.category}
-                    onChange={(event) =>
+                <input
+                  className={inputClass}
+                    type="text"
+                      value={form.category}
+                      onChange={(event) =>
                       setForm((current) => ({
-                        ...current,
-                        category: event.target.value,
-                      }))
-                    }
-                  >
-                    {categories.map((item) => (
-                      <option
-                        key={item}
-                        value={item}
-                        className="bg-zinc-900"
-                      >
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                      ...current,
+                      category: event.target.value,
+                    }))
+                  }
+                  placeholder="Contoh: AI Tools, WhatsApp Bot, Hosting..."
+                  maxLength={60}
+                  required
+                />
+              </label>
 
 
                 <label className="block">
