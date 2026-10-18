@@ -112,7 +112,7 @@ export default function Login() {
           'Akun berhasil terhubung. Mengarahkan ke profil...',
       });
 
-      navigate('/profile', {
+      navigate('/dashboard', {
         replace: true,
       });
     } catch (error: unknown) {
