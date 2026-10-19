@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Sparkles,
   Upload,
+  Code2,
   Search,
   Database,
   Users,
