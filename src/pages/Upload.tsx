@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -39,6 +38,7 @@ import Shell from '../components/Shell';
 import { auth, db } from '../lib/firebase';
 
 type ResourceKind = 'Script' | 'Snippet' | 'Baileys';
+type DownloadProvider = 'mediafire' | 'github';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_SOURCE_LENGTH = 200000;
@@ -513,6 +513,8 @@ export default function Upload() {
   const [platform, setPlatform] = useState('');
   const [snippetType, setSnippetType] = useState('');
 
+  const [downloadProvider, setDownloadProvider] =
+    useState<DownloadProvider>('mediafire');
   const [mediafireUrl, setMediafireUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
 
@@ -696,9 +698,14 @@ export default function Upload() {
     }
 
     if (kind === 'Script') {
-      if (!cleanMediaFire && !cleanGitHub) {
+      const selectedDownloadUrl =
+        downloadProvider === 'mediafire'
+          ? cleanMediaFire
+          : cleanGitHub;
+
+      if (!selectedDownloadUrl) {
         setError(
-          'Isi minimal satu link download: MediaFire atau GitHub.'
+          `Link ${downloadProvider === 'mediafire' ? 'MediaFire' : 'GitHub'} wajib diisi.`
         );
         return;
       }
@@ -719,34 +726,47 @@ export default function Upload() {
       }
 
       if (
-        cleanMediaFire &&
+        downloadProvider === 'mediafire' &&
         !isAllowedHost(cleanMediaFire, [
           'mediafire.com',
           'www.mediafire.com',
         ])
       ) {
         setError(
-          'Link MediaFire tidak valid. Gunakan link MediaFire resmi.'
+          'Link MediaFire tidak valid. Gunakan URL HTTPS resmi MediaFire.'
         );
         return;
       }
 
       if (
-        cleanGitHub &&
+        downloadProvider === 'github' &&
         !isAllowedHost(cleanGitHub, [
           'github.com',
           'www.github.com',
         ])
       ) {
         setError(
-          'Link GitHub tidak valid. Gunakan link GitHub resmi.'
+          'Link GitHub tidak valid. Gunakan URL HTTPS resmi GitHub.'
         );
         return;
       }
 
-      if (cleanMediaFire && cleanGitHub) {
+      if (
+        downloadProvider === 'mediafire' &&
+        cleanGitHub
+      ) {
         setError(
-          'Pilih satu link download saja: MediaFire atau GitHub.'
+          'Hapus link GitHub. Kamu hanya bisa mengirim satu tautan.'
+        );
+        return;
+      }
+
+      if (
+        downloadProvider === 'github' &&
+        cleanMediaFire
+      ) {
+        setError(
+          'Hapus link MediaFire. Kamu hanya bisa mengirim satu tautan.'
         );
         return;
       }
@@ -782,7 +802,7 @@ export default function Upload() {
       }
 
       if (!cleanLanguage) {
-        setError('Programming Language wajib diisi.');
+        setError('Programming Language wajib dipilih.');
         return;
       }
     }
@@ -926,8 +946,15 @@ export default function Upload() {
           scriptType,
           platform,
           language: cleanLanguage,
-          mediafireUrl: cleanMediaFire || null,
-          githubUrl: cleanGitHub || null,
+          mediafireUrl:
+            downloadProvider === 'mediafire'
+              ? cleanMediaFire
+              : null,
+          githubUrl:
+            downloadProvider === 'github'
+              ? cleanGitHub
+              : null,
+          downloadProvider,
           previewImageUrls: finalPreviewImageUrls,
         });
       }
@@ -964,6 +991,7 @@ export default function Upload() {
       setScriptType('');
       setPlatform('');
       setSnippetType('');
+      setDownloadProvider('mediafire');
       setMediafireUrl('');
       setGithubUrl('');
 
@@ -1307,7 +1335,7 @@ export default function Upload() {
               {kind !== 'Baileys' && (
                 <Panel>
                   <SectionHeading
-                    number={kind === 'Script' ? '03' : '03'}
+                    number="03"
                     title="Thumbnail & preview"
                     description="Media bersifat opsional, tetapi bisa membantu pengguna memahami resource."
                   />
@@ -1440,9 +1468,7 @@ export default function Upload() {
                               className="hidden"
                               onChange={(event) => {
                                 handlePreviewFilesChange(
-                                  Array.from(
-                                    event.target.files || []
-                                  )
+                                  Array.from(event.target.files || [])
                                 );
                                 event.currentTarget.value = '';
                               }}
@@ -1566,12 +1592,14 @@ export default function Upload() {
                     <button
                       type="button"
                       onClick={() => {
+                        setDownloadProvider('mediafire');
                         setGithubUrl('');
                         clearMessages();
                       }}
+                      aria-pressed={downloadProvider === 'mediafire'}
                       className={`rounded-xl border p-4 text-left transition ${
-                        !githubUrl
-                          ? 'border-violet-400/30 bg-violet-400/[0.06]'
+                        downloadProvider === 'mediafire'
+                          ? 'border-violet-400/50 bg-violet-400/[0.08]'
                           : 'border-white/[0.08] bg-black/20 hover:border-white/[0.15]'
                       }`}
                     >
@@ -1582,7 +1610,7 @@ export default function Upload() {
 
                         <span
                           className={`grid h-5 w-5 place-items-center rounded-full border ${
-                            !githubUrl
+                            downloadProvider === 'mediafire'
                               ? 'border-violet-300 bg-violet-300 text-black'
                               : 'border-white/20 text-transparent'
                           }`}
@@ -1599,12 +1627,14 @@ export default function Upload() {
                     <button
                       type="button"
                       onClick={() => {
+                        setDownloadProvider('github');
                         setMediafireUrl('');
                         clearMessages();
                       }}
+                      aria-pressed={downloadProvider === 'github'}
                       className={`rounded-xl border p-4 text-left transition ${
-                        !mediafireUrl
-                          ? 'border-violet-400/30 bg-violet-400/[0.06]'
+                        downloadProvider === 'github'
+                          ? 'border-violet-400/50 bg-violet-400/[0.08]'
                           : 'border-white/[0.08] bg-black/20 hover:border-white/[0.15]'
                       }`}
                     >
@@ -1615,7 +1645,7 @@ export default function Upload() {
 
                         <span
                           className={`grid h-5 w-5 place-items-center rounded-full border ${
-                            !mediafireUrl
+                            downloadProvider === 'github'
                               ? 'border-violet-300 bg-violet-300 text-black'
                               : 'border-white/20 text-transparent'
                           }`}
@@ -1633,15 +1663,17 @@ export default function Upload() {
                   <div className="mt-5">
                     <Field
                       label={
-                        mediafireUrl
+                        downloadProvider === 'mediafire'
                           ? 'MediaFire download URL'
                           : 'GitHub repository URL'
                       }
                       value={
-                        mediafireUrl ? mediafireUrl : githubUrl
+                        downloadProvider === 'mediafire'
+                          ? mediafireUrl
+                          : githubUrl
                       }
                       onChange={(value) => {
-                        if (mediafireUrl) {
+                        if (downloadProvider === 'mediafire') {
                           setMediafireUrl(value);
                           setGithubUrl('');
                         } else {
@@ -1652,13 +1684,17 @@ export default function Upload() {
                         clearMessages();
                       }}
                       placeholder={
-                        mediafireUrl
+                        downloadProvider === 'mediafire'
                           ? 'https://www.mediafire.com/file/...'
                           : 'https://github.com/username/repository'
                       }
                       icon={<Link2 size={16} />}
                       required
-                      hint="Gunakan URL HTTPS resmi dari penyedia yang dipilih."
+                      hint={`Masukkan URL HTTPS resmi ${
+                        downloadProvider === 'mediafire'
+                          ? 'MediaFire'
+                          : 'GitHub'
+                      } sesuai pilihan.`}
                     />
                   </div>
 
