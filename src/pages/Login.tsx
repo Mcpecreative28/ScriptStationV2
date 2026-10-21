@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import {
   doc,
+  getDoc,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
@@ -46,46 +47,40 @@ export default function Login() {
     try {
       if (!firebaseConfigured) {
         throw new Error(
-          'Firebase belum terkonfigurasi pada deployment ini.'
+          'Firebase belum terkonfigurasi pada deployment ini.',
         );
       }
 
-      if (!auth) {
+      if (!auth || !db) {
         throw new Error(
-          'Firebase Authentication tidak tersedia.'
+          'Firebase Authentication atau Firestore tidak tersedia.',
         );
       }
 
-      if (!db) {
-        throw new Error(
-          'Firestore tidak tersedia.'
-        );
-      }
-
-      const result = await signInWithPopup(
-        auth,
-        googleProvider
-      );
-
+      const result = await signInWithPopup(auth, googleProvider);
       const user: User = result.user;
+      const userRef = doc(db, 'users', user.uid);
+      const userSnapshot = await getDoc(userRef);
 
-      await setDoc(
-        doc(db, 'users', user.uid),
-        {
-          uid: user.uid,
-          displayName: user.displayName ?? '',
-          email: user.email ?? '',
-          photoURL: user.photoURL ?? '',
-          updatedAt: serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
+      const profileData = {
+        uid: user.uid,
+        displayName: user.displayName ?? '',
+        email: user.email ?? '',
+        photoURL: user.photoURL ?? '',
+        updatedAt: serverTimestamp(),
+      };
 
-      navigate('/dashboard', {
-        replace: true,
-      });
+      if (userSnapshot.exists()) {
+        await setDoc(userRef, profileData, { merge: true });
+      } else {
+        await setDoc(userRef, {
+          ...profileData,
+          role: 'user',
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      navigate('/dashboard', { replace: true });
     } catch (error: unknown) {
       console.error('LOGIN ERROR:', error);
       setError(getFirebaseErrorMessage(error));
@@ -264,7 +259,6 @@ export default function Login() {
               <div className="space-y-3">
                 <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3.5">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-
                   <div>
                     <p className="text-xs font-medium text-zinc-200">
                       Autentikasi Google
@@ -278,7 +272,6 @@ export default function Login() {
 
                 <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3.5">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
-
                   <div>
                     <p className="text-xs font-medium text-zinc-200">
                       Data profil
