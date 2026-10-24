@@ -20,6 +20,7 @@ import {
   Clock,
   TrendingUp,
   Store,
+  ScanSearch,
 } from 'lucide-react';
 import {
   collection,
@@ -675,7 +676,7 @@ export default function Home() {
           </section>
         ))}
 
-        <section className="mt-14 grid gap-4 sm:grid-cols-2">
+        <section className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             to="/rooms"
             className="glass group relative overflow-hidden rounded-3xl border border-white/[0.07] p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/25 hover:bg-white/[0.025] sm:p-7 motion-reduce:transform-none motion-reduce:transition-none"
@@ -725,6 +726,37 @@ export default function Home() {
               <ArrowRight size={15} />
             </span>
           </Link>
+          
+<Link
+  to="/amfinder"
+  className="glass group relative overflow-hidden rounded-3xl border border-violet-300/15 p-6 transition duration-300 hover:-translate-y-1 hover:border-violet-300/30 hover:bg-white/[0.025] sm:p-7 motion-reduce:transform-none motion-reduce:transition-none"
+>
+  <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-violet-400/[0.08] blur-3xl transition duration-500 group-hover:bg-violet-400/[0.16]" />
+
+  <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-300/15 bg-violet-300/[0.08] text-violet-200 transition duration-300 group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none">
+    <ScanSearch size={22} />
+  </div>
+
+  <div className="relative mt-5 flex flex-wrap items-center gap-2">
+    <h2 className="text-lg font-semibold text-zinc-100">
+      AMFinder
+    </h2>
+    <span className="rounded-full border border-violet-300/15 bg-violet-300/[0.07] px-2 py-1 text-[10px] font-medium text-violet-200">
+      PRESET TOOLS
+    </span>
+  </div>
+
+  <p className="relative mt-2 text-sm leading-6 text-zinc-500">
+    Temukan preset Alight Motion dari tautan video TikTok.
+    Pindai hasil yang tersedia dari deskripsi, bio, dan komentar
+    melalui layanan pencarian preset.
+  </p>
+
+  <span className="relative mt-5 inline-flex items-center gap-2 text-sm font-medium text-violet-200 transition duration-300 group-hover:gap-3">
+    Cari Preset
+    <ArrowRight size={15} />
+  </span>
+</Link>
         </section>
 
         <section className="mt-14 grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
