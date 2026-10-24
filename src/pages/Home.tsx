@@ -464,6 +464,15 @@ export default function Home() {
                   <Upload size={17} />
                   Upload Resource
                 </Link>
+
+                <Link
+                  to="/downloader"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-violet-300/15 bg-violet-300/[0.07] px-5 py-3 text-sm font-semibold text-violet-100 transition duration-300 hover:-translate-y-0.5 hover:border-violet-300/30 hover:bg-violet-300/[0.12] motion-reduce:transform-none motion-reduce:transition-none"
+                >
+                  <Download size={17} />
+                  Downloader Hub
+                  <ArrowRight size={15} />
+                </Link>
               </div>
 
               <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-zinc-500">
@@ -676,7 +685,7 @@ export default function Home() {
           </section>
         ))}
 
-        <section className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="mt-14 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Link
             to="/rooms"
             className="glass group relative overflow-hidden rounded-3xl border border-white/[0.07] p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/25 hover:bg-white/[0.025] sm:p-7 motion-reduce:transform-none motion-reduce:transition-none"
@@ -728,6 +737,36 @@ export default function Home() {
           </Link>
           
 <Link
+            to="/downloader"
+            className="glass group relative overflow-hidden rounded-3xl border border-cyan-300/15 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-white/[0.025] sm:p-7 motion-reduce:transform-none motion-reduce:transition-none"
+          >
+            <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-cyan-400/[0.08] blur-3xl transition duration-500 group-hover:bg-cyan-400/[0.16]" />
+
+            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-200 transition duration-300 group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none">
+              <Download size={22} />
+            </div>
+
+            <div className="relative mt-5 flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-zinc-100">
+                Downloader Hub
+              </h2>
+              <span className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.07] px-2 py-1 text-[10px] font-medium text-cyan-200">
+                MULTI PLATFORM
+              </span>
+            </div>
+
+            <p className="relative mt-2 text-sm leading-6 text-zinc-500">
+              Unduh media dari platform yang didukung melalui satu halaman,
+              dengan pilihan layanan dan resolusi yang tersedia.
+            </p>
+
+            <span className="relative mt-5 inline-flex items-center gap-2 text-sm font-medium text-cyan-200 transition duration-300 group-hover:gap-3">
+              Buka Downloader
+              <ArrowRight size={15} />
+            </span>
+          </Link>
+
+          <Link
   to="/amfinder"
   className="glass group relative overflow-hidden rounded-3xl border border-violet-300/15 p-6 transition duration-300 hover:-translate-y-1 hover:border-violet-300/30 hover:bg-white/[0.025] sm:p-7 motion-reduce:transform-none motion-reduce:transition-none"
 >
