@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronRight,
   Code2,
+  Download,
   Home,
   LogIn,
   LogOut,
@@ -35,6 +36,7 @@ const mainNav: NavItem[] = [
   { label: 'Rooms', href: '/rooms', icon: MessageCircle },
   { label: 'Marketplace', href: '/marketplace', icon: Store },
   { label: 'AMFinder', href: '/amfinder', icon: ScanSearch },
+  { label: 'Downloader', href: '/downloader', icon: Download },
 ];
 
 function isActivePath(pathname: string, href: string) {
