@@ -11,6 +11,7 @@ import Search from './pages/Search';
 import Rooms from './pages/Rooms';
 import Marketplace from './pages/Marketplace';
 import AMFinder from './pages/AMFinder';
+import Downloader from './pages/Downloader';
 import Placeholder from './pages/Placeholder';
 import './index.css';
 
@@ -31,8 +32,8 @@ export default function App() {
         <Route path="/scripts/upload" element={<Upload />} />
         <Route path="/snippets/upload" element={<Upload />} />
         <Route path="/baileys/upload" element={<Upload />} />
-
         <Route path="/amfinder" element={<AMFinder />} />
+        <Route path="/downloader" element={<Downloader />} />
 
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
