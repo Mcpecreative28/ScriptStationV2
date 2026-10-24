@@ -1,3 +1,4 @@
+
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
 import Listing from './pages/Listing';
@@ -9,6 +10,7 @@ import Admin from './pages/Admin';
 import Search from './pages/Search';
 import Rooms from './pages/Rooms';
 import Marketplace from './pages/Marketplace';
+import AMFinder from './pages/AMFinder';
 import Placeholder from './pages/Placeholder';
 import './index.css';
 
@@ -17,22 +19,32 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+
         <Route path="/scripts" element={<Listing kind="Script" />} />
         <Route path="/snippets" element={<Listing kind="Snippet" />} />
         <Route path="/baileys" element={<Listing kind="Baileys" />} />
+
         <Route path="/snippets/:id" element={<ResourceDetail />} />
         <Route path="/baileys/:id" element={<ResourceDetail />} />
         <Route path="/scripts/:id" element={<ResourceDetail />} />
+
         <Route path="/scripts/upload" element={<Upload />} />
         <Route path="/snippets/upload" element={<Upload />} />
         <Route path="/baileys/upload" element={<Upload />} />
+
+        <Route path="/amfinder" element={<AMFinder />} />
+
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/search" element={<Search />} />
         <Route path="/rooms" element={<Rooms />} />
         <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/admin" element={<Admin />} />
-        <Route path="*" element={<Placeholder title="404 — Page not found" />} />
+
+        <Route
+          path="*"
+          element={<Placeholder title="404 — Page not found" />}
+        />
       </Routes>
     </BrowserRouter>
   );
