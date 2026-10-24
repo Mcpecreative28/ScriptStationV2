@@ -104,7 +104,7 @@ export default function Navbar() {
             <span className="hidden whitespace-nowrap text-base font-bold tracking-tight text-white sm:inline sm:text-lg">
               ScriptStation<span className="text-zinc-500">V2</span>
             </span>
-            <span className="text-sm font-bold tracking-tight text-white sm:hidden">SS<span className="text-violet-300">V2</span></span>
+            <span className="text-sm font-bold tracking-tight text-white sm:hidden">ScriptStation<span className="text-violet-300">V2</span></span>
           </Link>
 
           <nav className="ml-auto hidden min-w-0 flex-1 items-center justify-center gap-0.5 xl:flex">
