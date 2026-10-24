@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Search,
+  ScanSearch,
   ShieldCheck,
   Store,
   Terminal,
@@ -34,6 +35,7 @@ const mainNav: NavItem[] = [
   { label: 'Search', href: '/search', icon: Search },
   { label: 'Rooms', href: '/rooms', icon: MessageCircle },
   { label: 'Marketplace', href: '/marketplace', icon: Store },
+  { label: 'AMFinder', href: '/amfinder', icon: ScanSearch },
 ];
 
 function isActivePath(pathname: string, href: string) {
