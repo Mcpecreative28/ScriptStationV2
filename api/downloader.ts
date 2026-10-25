@@ -135,15 +135,19 @@ export default async function handler(
     }
   }
 
-  if (
-    platform === 'ytmp4' &&
-    !['360', '480', '720', '1080', '1440', '2160'].includes(resolution)
-  ) {
+  
+if (platform === 'ytmp4') {
+  const allowedResolutions = server === 'v1/ytmp4'
+    ? ['144', '240', '360', '480', '720', '1080']
+    : ['360', '480', '720', '1080', '1440', '2160'];
+
+  if (!allowedResolutions.includes(resolution)) {
     return res.status(400).json({
       success: false,
-      message: 'Resolusi tidak didukung.',
+      message: 'Resolusi tidak didukung oleh server ini.',
     });
   }
+}
 
   const endpoint = new URL(server, API_BASE);
 
