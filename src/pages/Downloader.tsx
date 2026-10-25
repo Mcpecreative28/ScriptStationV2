@@ -1,501 +1,674 @@
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
-  Download,
-  Search,
-  Music,
-  Video,
-  Camera,
-  Users,
-  LoaderCircle,
-  Link2,
-  RotateCw,
+  AudioLines,
   CheckCircle2,
-  AlertCircle,
-  Copy,
+  Clock3,
+  Download,
+  Eye,
+  FileVideo,
+  Heart,
+  Link2,
+  Music2,
+  Search,
+  Sparkles,
+  UserRound,
+  Video,
+  X,
 } from 'lucide-react';
+import Shell from '../components/Shell';
 
-type Platform =
+type ServiceId =
   | 'aio'
   | 'facebook'
   | 'instagram'
+  | 'instagram-v1'
+  | 'instagram-v2'
   | 'snackvideo'
   | 'spotify'
+  | 'spotify-v1'
   | 'spotifyplay'
   | 'threads'
   | 'tiktok'
   | 'twitter'
   | 'ytmp3'
-  | 'ytmp4';
+  | 'ytmp3-v1'
+  | 'ytmp4'
+  | 'ytmp4-v1';
 
-const platforms: {
-  id: Platform;
+type Service = {
+  id: ServiceId;
   name: string;
+  group: 'Semua' | 'Video' | 'Audio';
   description: string;
-  icon: typeof Download;
-}[] = [
-  { id: 'aio', name: 'All Downloader', description: 'Berbagai platform', icon: Download },
-  { id: 'tiktok', name: 'TikTok', description: 'Video TikTok', icon: Video },
-  { id: 'facebook', name: 'Facebook', description: 'Video Facebook', icon: Users },
-  { id: 'instagram', name: 'Instagram', description: 'Post dan Reels', icon: Camera },
-  { id: 'snackvideo', name: 'SnackVideo', description: 'Video SnackVideo', icon: Video },
-  { id: 'threads', name: 'Threads', description: 'Post Threads', icon: Link2 },
-  { id: 'twitter', name: 'X / Twitter', description: 'Video dari X', icon: Video },
-  { id: 'spotify', name: 'Spotify', description: 'Lagu dari tautan', icon: Music },
-  { id: 'spotifyplay', name: 'Cari Lagu', description: 'Cari berdasarkan judul', icon: Search },
-  { id: 'ytmp3', name: 'YouTube MP3', description: 'Audio YouTube', icon: Music },
-  { id: 'ytmp4', name: 'YouTube MP4', description: 'Video YouTube', icon: Video },
+  placeholder: string;
+  query?: boolean;
+  resolutions?: string[];
+};
+
+type Media = {
+  url: string;
+  label: string;
+  kind: 'video' | 'audio' | 'file';
+  quality?: string;
+};
+
+type Metadata = {
+  title?: string;
+  description?: string;
+  author?: string;
+  thumbnail?: string;
+  duration?: string;
+  views?: string;
+  likes?: string;
+  size?: string;
+};
+
+const SERVICES: Service[] = [
+  { id: 'aio', name: 'All-in-One', group: 'Semua', description: 'Deteksi platform otomatis', placeholder: 'Tempel tautan media...' },
+  { id: 'tiktok', name: 'TikTok', group: 'Video', description: 'Video TikTok', placeholder: 'https://www.tiktok.com/...' },
+  { id: 'facebook', name: 'Facebook', group: 'Video', description: 'Video Facebook', placeholder: 'https://www.facebook.com/...' },
+  { id: 'instagram', name: 'Instagram', group: 'Video', description: 'Server utama', placeholder: 'https://www.instagram.com/...' },
+  { id: 'instagram-v1', name: 'Instagram V1', group: 'Video', description: 'Server alternatif 1', placeholder: 'https://www.instagram.com/...' },
+  { id: 'instagram-v2', name: 'Instagram V2', group: 'Video', description: 'Server alternatif 2', placeholder: 'https://www.instagram.com/...' },
+  { id: 'snackvideo', name: 'SnackVideo', group: 'Video', description: 'Video SnackVideo', placeholder: 'https://www.snackvideo.com/...' },
+  { id: 'threads', name: 'Threads', group: 'Video', description: 'Media dari Threads', placeholder: 'https://www.threads.net/...' },
+  { id: 'twitter', name: 'X / Twitter', group: 'Video', description: 'Video dari X', placeholder: 'https://x.com/...' },
+  { id: 'ytmp4', name: 'YouTube MP4', group: 'Video', description: 'Video berbagai resolusi', placeholder: 'https://www.youtube.com/watch?v=...', resolutions: ['360', '480', '720', '1080', '1440', '2160'] },
+  { id: 'ytmp4-v1', name: 'YouTube MP4 V1', group: 'Video', description: 'Server alternatif', placeholder: 'https://youtu.be/...', resolutions: ['144', '240', '360', '480', '720', '1080'] },
+  { id: 'spotify', name: 'Spotify', group: 'Audio', description: 'Audio dari tautan Spotify', placeholder: 'https://open.spotify.com/track/...' },
+  { id: 'spotify-v1', name: 'Spotify V1', group: 'Audio', description: 'Server alternatif Spotify', placeholder: 'https://open.spotify.com/track/...' },
+  { id: 'spotifyplay', name: 'Cari Lagu', group: 'Audio', description: 'Cari judul atau artis', placeholder: 'Masukkan judul lagu atau nama artis...', query: true },
+  { id: 'ytmp3', name: 'YouTube MP3', group: 'Audio', description: 'Audio dari YouTube', placeholder: 'https://www.youtube.com/watch?v=...' },
+  { id: 'ytmp3-v1', name: 'YouTube MP3 V1', group: 'Audio', description: 'Server audio alternatif', placeholder: 'https://youtu.be/...' },
 ];
 
-const resolutions: Record<string, string[]> = {
-  ytmp4: ['360', '480', '720', '1080', '1440', '2160'],
+const ENDPOINTS: Record<ServiceId, string> = {
+  aio: 'aio',
+  facebook: 'facebook',
+  instagram: 'instagram',
+  'instagram-v1': 'v1/instagram',
+  'instagram-v2': 'v2/instagram',
+  snackvideo: 'snackvideo',
+  spotify: 'spotify',
+  'spotify-v1': 'v1/spotify',
+  spotifyplay: 'spotifyplay',
+  threads: 'threads',
+  tiktok: 'tiktok',
+  twitter: 'twitter',
+  ytmp3: 'ytmp3',
+  'ytmp3-v1': 'v1/ytmp3',
+  ytmp4: 'ytmp4',
+  'ytmp4-v1': 'v1/ytmp4',
 };
 
-const servers: Record<string, { label: string; value: string }[]> = {
-  instagram: [
-    { label: 'Server Utama', value: 'instagram' },
-    { label: 'Server V1', value: 'v1/instagram' },
-    { label: 'Server V2', value: 'v2/instagram' },
-  ],
-  spotify: [
-    { label: 'Server Utama', value: 'spotify' },
-    { label: 'Server V1', value: 'v1/spotify' },
-  ],
-  ytmp3: [
-    { label: 'Server Utama', value: 'ytmp3' },
-    { label: 'Server V1', value: 'v1/ytmp3' },
-  ],
-  ytmp4: [
-    { label: 'Server 2160p', value: 'ytmp4' },
-    { label: 'Server V1 (maks. 1080p)', value: 'v1/ytmp4' },
-  ],
-};
+const VIDEO_SERVICES: ServiceId[] = [
+  'facebook', 'instagram', 'instagram-v1', 'instagram-v2',
+  'snackvideo', 'threads', 'tiktok', 'twitter', 'ytmp4', 'ytmp4-v1',
+];
 
-export default function Downloader() {
-  const [platform, setPlatform] = useState<Platform>('aio');
-  const [url, setUrl] = useState('');
-  const [query, setQuery] = useState('');
-  const [resolution, setResolution] = useState('720');
-  const [server, setServer] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState<any>(null);
-  const [stage, setStage] = useState('Menunggu tautan kamu');
+const AUDIO_SERVICES: ServiceId[] = [
+  'spotify', 'spotify-v1', 'spotifyplay', 'ytmp3', 'ytmp3-v1',
+];
 
-  const availableServers = servers[platform] || [];
-  const selectedServer =
-    availableServers.find((item) => item.value === server)?.value ||
-    availableServers[0]?.value ||
-    platform;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
-  const getDownloadUrl = (data: any): string[] => {
-    const links: string[] = [];
-    const visit = (value: any, depth = 0) => {
-      if (depth > 5 || value == null) return;
+function stringValue(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
 
-      if (typeof value === 'string') {
-        if (/^https?:\/\//i.test(value)) {
-          if (
-            /\.(mp4|mp3|m4a|webm|mov)(\?|$)/i.test(value) ||
-            /download|media|video|audio|cdn|\.mp4|\.mp3/i.test(value)
-          ) {
-            links.push(value);
-          }
-        }
-        return;
-      }
+function formatNumber(value?: string) {
+  if (!value) return undefined;
+  const number = Number(value.replace(/[, ]/g, ''));
+  if (!Number.isFinite(number)) return value;
+  return new Intl.NumberFormat('id-ID', {
+    notation: number >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(number);
+}
 
-      if (Array.isArray(value)) {
-        value.forEach((item) => visit(item, depth + 1));
-        return;
-      }
+function formatDuration(value?: string) {
+  if (!value) return undefined;
+  if (value.includes(':')) return value;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return value;
 
-      if (typeof value === 'object') {
-        Object.entries(value).forEach(([key, item]) => {
-          if (
-            typeof item === 'string' &&
-            /^https?:\/\//i.test(item) &&
-            /url|link|download|video|audio|media|src/i.test(key)
-          ) {
-            links.push(item);
-          } else {
-            visit(item, depth + 1);
-          }
-        });
-      }
-    };
+  const minutes = Math.floor(seconds / 60);
+  const remaining = String(Math.floor(seconds % 60)).padStart(2, '0');
+  const hours = Math.floor(minutes / 60);
 
-    visit(data);
-    return [...new Set(links)];
+  return hours
+    ? `${hours}:${String(minutes % 60).padStart(2, '0')}:${remaining}`
+    : `${minutes}:${remaining}`;
+}
+
+function extractMetadata(data: unknown): Metadata {
+  const result: Metadata = {};
+  const aliases: Record<keyof Metadata, RegExp> = {
+    title: /^(title|name|track|song|video_title|music_title)$/i,
+    description: /^(description|caption|text|desc)$/i,
+    author: /^(author|artist|creator|username|channel|uploader|owner)$/i,
+    thumbnail: /^(thumbnail|thumbnail_url|cover|cover_url|image|image_url|thumb)$/i,
+    duration: /^(duration|length|time)$/i,
+    views: /^(views|view_count|play_count|plays)$/i,
+    likes: /^(likes|like_count|favorite_count)$/i,
+    size: /^(filesize|file_size|size|content_length)$/i,
   };
 
-  async function handleDownload(e: React.FormEvent) {
-    e.preventDefault();
+  function walk(value: unknown, depth = 0) {
+    if (!isRecord(value) || depth > 7) {
+      if (Array.isArray(value) && depth <= 7) value.forEach((item) => walk(item, depth + 1));
+      return;
+    }
+
+    for (const [key, item] of Object.entries(value)) {
+      for (const field of Object.keys(aliases) as (keyof Metadata)[]) {
+        if (result[field] !== undefined || !aliases[field].test(key)) continue;
+        const candidate = stringValue(item);
+        if (!candidate) continue;
+
+        if (field !== 'thumbnail' || /^https?:\/\//i.test(candidate)) {
+          result[field] = candidate;
+        }
+      }
+      if (isRecord(item) || Array.isArray(item)) walk(item, depth + 1);
+    }
+  }
+
+  walk(data);
+  return result;
+}
+
+function extractMedia(data: unknown, service: ServiceId): Media[] {
+  const output: Media[] = [];
+  const seen = new Set<string>();
+
+  function walk(value: unknown, key = '', depth = 0) {
+    if (depth > 8 || value == null) return;
+
+    if (Array.isArray(value)) {
+      value.slice(0, 80).forEach((item, index) => walk(item, `${key}[${index}]`, depth + 1));
+      return;
+    }
+
+    if (!isRecord(value)) return;
+
+    for (const [childKey, child] of Object.entries(value)) {
+      if (typeof child === 'string' && /^https?:\/\//i.test(child)) {
+        let pathname = '';
+        try {
+          pathname = new URL(child).pathname.toLowerCase();
+        } catch {
+          continue;
+        }
+
+        const field = childKey.toLowerCase();
+        const extension = pathname.match(/\.(mp4|m4v|webm|mov|mp3|m4a|aac|ogg|wav|flac)(?:$)/)?.[1];
+        const imageField = /(thumb|thumbnail|cover|avatar|profile|image)/i.test(field);
+        const mediaField = /(url|link|download|video|audio|media|stream|play|file|mp3|mp4|src)/i.test(field);
+
+        if (imageField || (!extension && !mediaField) || seen.has(child)) continue;
+
+        seen.add(child);
+
+        const audio = /mp3|m4a|aac|ogg|wav|flac|audio|music/i.test(`${field} ${extension || ''}`)
+          || AUDIO_SERVICES.includes(service);
+        const video = /mp4|m4v|webm|mov|video/i.test(`${field} ${extension || ''}`)
+          || VIDEO_SERVICES.includes(service);
+
+        const quality = field.match(/(144|240|360|480|720|1080|1440|2160)p?/i)?.[0];
+
+        output.push({
+          url: child,
+          kind: audio ? 'audio' : video ? 'video' : 'file',
+          label: audio ? 'Audio' : video ? 'Video' : 'Media',
+          quality,
+        });
+      } else if (isRecord(child) || Array.isArray(child)) {
+        walk(child, childKey, depth + 1);
+      }
+    }
+  }
+
+  walk(data);
+  return output.slice(0, 12);
+}
+
+function isSafeMediaUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export default function Downloader() {
+  const [serviceId, setServiceId] = useState<ServiceId>('aio');
+  const [input, setInput] = useState('');
+  const [resolution, setResolution] = useState('720');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<{
+    media: Media[];
+    metadata: Metadata;
+    raw: unknown;
+  } | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const selected = SERVICES.find((service) => service.id === serviceId) ?? SERVICES[0];
+
+  function selectService(id: ServiceId) {
+    setServiceId(id);
     setError('');
     setResult(null);
+    setShowDetails(false);
+  }
 
-    if (platform === 'spotifyplay' && !query.trim()) {
-      setError('Masukkan judul lagu terlebih dahulu.');
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setResult(null);
+    setShowDetails(false);
+
+    const value = input.trim();
+
+    if (!value) {
+      setError(selected.query ? 'Masukkan judul lagu atau nama artis.' : 'Tempel tautan media terlebih dahulu.');
       return;
     }
 
-    if (platform !== 'spotifyplay' && !url.trim()) {
-      setError('Masukkan tautan terlebih dahulu.');
-      return;
-    }
-
-    if (url.trim() && !/^https?:\/\//i.test(url.trim())) {
-      setError('Tautan harus diawali http:// atau https://.');
-      return;
+    if (!selected.query) {
+      try {
+        const parsed = new URL(value);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      } catch {
+        setError('Tautan tidak valid. Gunakan URL lengkap yang diawali https://.');
+        return;
+      }
     }
 
     setLoading(true);
-    setStage('Memeriksa permintaan...');
 
     try {
       const params = new URLSearchParams();
+      params.set('service', ENDPOINTS[serviceId]);
+      params.set(selected.query ? 'q' : 'url', value);
 
-      if (platform === 'spotifyplay') {
-        params.set('q', query.trim());
-      } else {
-        params.set('url', url.trim());
+      if (selected.resolutions) params.set('resolusi', resolution);
+
+      const response = await fetch(`/api/downloader?${params.toString()}`);
+      const payload: unknown = await response.json();
+
+      if (!response.ok) {
+        const message = isRecord(payload)
+          ? stringValue(payload.error) || stringValue(payload.message)
+          : undefined;
+        throw new Error(message || 'Server gagal memproses media ini.');
       }
 
-      if (platform === 'ytmp4') {
-        params.set('resolusi', resolution);
+      if (isRecord(payload) && (
+        payload.success === false || payload.ok === false || payload.status === false
+      )) {
+        throw new Error(
+          stringValue(payload.error) ||
+          stringValue(payload.message) ||
+          'Media tidak ditemukan oleh server.',
+        );
       }
 
-      if (availableServers.length > 0) {
-        params.set('server', selectedServer);
-      }
+      const media = extractMedia(payload, serviceId);
+      const metadata = extractMetadata(payload);
 
-      setStage('Menghubungi server downloader...');
-
-      const response = await fetch(
-        `/api/downloader?platform=${encodeURIComponent(platform)}&${params.toString()}`
-      );
-
-      setStage('Membaca hasil dari server...');
-
-      const data = await response.json();
-
-      if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'Server gagal memproses permintaan.');
-      }
-
-      const links = getDownloadUrl(data);
-
-      setResult({ data, links });
-      setStage('Permintaan selesai');
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Terjadi kesalahan. Coba lagi beberapa saat.'
-      );
+      setResult({ media, metadata, raw: payload });
+    } catch (cause) {
+      setError(cause instanceof Error
+        ? cause.message
+        : 'Terjadi kesalahan. Coba beberapa saat lagi.');
     } finally {
       setLoading(false);
     }
   }
 
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      setError('Gagal menyalin. Salin tautan secara manual.');
-    }
-  };
-
   return (
-    <main className="min-h-screen bg-[#070914] px-4 pb-16 pt-8 text-white sm:px-6 sm:pt-12">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-32 top-20 h-80 w-80 rounded-full bg-violet-600/15 blur-[120px]" />
-        <div className="absolute -right-32 top-64 h-80 w-80 rounded-full bg-cyan-500/10 blur-[120px]" />
-      </div>
+    <Shell>
+      <main className="relative min-h-[70vh] overflow-hidden px-4 pb-16 pt-8 text-white sm:px-6 lg:px-8">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-24 top-12 h-72 w-72 rounded-full bg-violet-600/15 blur-[110px]" />
+          <div className="absolute -right-24 top-64 h-80 w-80 rounded-full bg-cyan-500/10 blur-[120px]" />
+          <div className="absolute left-1/3 top-[35rem] h-64 w-64 rounded-full bg-fuchsia-500/[0.07] blur-[110px]" />
+        </div>
 
-      <div className="relative mx-auto max-w-6xl">
-        <section className="mb-10 text-center">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-4 py-2 text-xs font-medium text-violet-200">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-300" />
-            SCRIPTSTATION V2 · DOWNLOADER HUB
-          </div>
-
-          <h1 className="text-4xl font-black tracking-tight sm:text-6xl">
-            Download <span className="bg-gradient-to-r from-violet-400 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">Anything.</span>
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-            Satu tempat untuk mengolah tautan video, audio, dan media favoritmu.
-            Pilih platform, tempel tautan, lalu mulai.
-          </p>
-        </section>
-
-        <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {platforms.map((item) => {
-            const Icon = item.icon;
-            const active = platform === item.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setPlatform(item.id);
-                  setResult(null);
-                  setError('');
-                  setServer('');
-                }}
-                className={`group rounded-2xl border p-4 text-left transition duration-200 hover:-translate-y-0.5 ${
-                  active
-                    ? 'border-violet-400/60 bg-violet-500/15 shadow-lg shadow-violet-950/30'
-                    : 'border-white/[0.08] bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.07]'
-                }`}
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <Icon
-                    size={22}
-                    className={active ? 'text-violet-300' : 'text-slate-400'}
-                  />
-                  {active && <CheckCircle2 size={16} className="text-cyan-300" />}
-                </div>
-                <div className="text-sm font-semibold">{item.name}</div>
-                <div className="mt-1 text-xs text-slate-500">{item.description}</div>
-              </button>
-            );
-          })}
-        </section>
-
-        <section className="grid items-start gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <form
-            onSubmit={handleDownload}
-            className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-8"
-          >
-            <div className="mb-6 flex items-center gap-3">
-              <div className="rounded-xl bg-violet-400/10 p-3 text-violet-300">
-                <Download size={22} />
+        <div className="relative mx-auto max-w-7xl">
+          <header className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+            <div className="max-w-3xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-300/20 bg-violet-400/[0.08] px-3.5 py-2 text-xs font-semibold text-violet-100 backdrop-blur-xl">
+                <Sparkles size={15} />
+                SCRIPTSTATION V2 / MEDIA HUB
               </div>
-              <div>
-                <h2 className="text-lg font-bold">Mulai Download</h2>
-                <p className="text-xs text-slate-400">
-                  Platform: {platforms.find((p) => p.id === platform)?.name}
-                </p>
-              </div>
+              <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
+                Media kamu,{' '}
+                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-200 bg-clip-text text-transparent">
+                  satu tempat.
+                </span>
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
+                Tempel tautan, pilih layanan, lihat detail media, lalu unduh format yang
+                tersedia. Dirancang supaya tetap nyaman dipakai di HP.
+              </p>
             </div>
 
-            {platform === 'spotifyplay' ? (
-              <label className="mb-5 block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">
-                  Judul lagu atau nama artis
-                </span>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Contoh: Judul lagu - Nama artis"
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3.5 text-sm outline-none transition placeholder:text-slate-600 focus:border-violet-400/60 focus:ring-2 focus:ring-violet-500/10"
-                />
-              </label>
-            ) : (
-              <label className="mb-5 block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">
-                  Tautan media
-                </span>
-                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-4 transition focus-within:border-violet-400/60">
-                  <Link2 size={18} className="shrink-0 text-slate-500" />
-                  <input
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="Tempel tautan di sini..."
-                    className="min-w-0 flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-slate-600"
-                    type="url"
-                  />
-                  {url && (
-                    <button
-                      type="button"
-                      onClick={() => setUrl('')}
-                      className="text-xs text-slate-500 hover:text-white"
-                    >
-                      Hapus
-                    </button>
-                  )}
-                </div>
-              </label>
-            )}
-
-            {availableServers.length > 0 && (
-              <label className="mb-5 block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">
-                  Pilih server
-                </span>
-                <select
-                  value={selectedServer}
-                  onChange={(e) => setServer(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-[#101222] px-4 py-3.5 text-sm outline-none focus:border-violet-400/60"
-                >
-                  {availableServers.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {platform === 'ytmp4' && (
-              <label className="mb-5 block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">
-                  Resolusi video
-                </span>
-                <select
-                  value={resolution}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setResolution(next);
-                    if (next === '1440' || next === '2160') {
-                      setServer('ytmp4');
-                    } else if (server === 'ytmp4') {
-                      setServer('v1/ytmp4');
-                    }
-                  }}
-                  className="w-full rounded-xl border border-white/10 bg-[#101222] px-4 py-3.5 text-sm outline-none focus:border-violet-400/60"
-                >
-                  {resolutions.ytmp4.map((item) => (
-                    <option key={item} value={item}>
-                      {item}p
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-2 block text-xs text-slate-500">
-                  Server V1 mendukung hingga 1080p. Resolusi lebih tinggi menggunakan server utama.
-                </span>
-              </label>
-            )}
-
-            {error && (
-              <div className="mb-5 flex gap-2 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
-                <AlertCircle size={18} className="shrink-0" />
-                <span>{error}</span>
+            <div className="grid grid-cols-2 gap-3 sm:min-w-64">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl">
+                <p className="text-xs text-zinc-500">Layanan</p>
+                <p className="mt-1 text-2xl font-bold">{SERVICES.length}</p>
+                <p className="text-[11px] text-zinc-500">tersedia</p>
               </div>
-            )}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl">
+                <p className="text-xs text-zinc-500">Format</p>
+                <p className="mt-1 text-2xl font-bold">MP4 / MP3</p>
+                <p className="text-[11px] text-zinc-500">jika disediakan server</p>
+              </div>
+            </div>
+          </header>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-500 px-5 py-4 text-sm font-bold shadow-lg shadow-violet-950/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {SERVICES.map((service) => {
+              const active = serviceId === service.id;
+              const Icon = service.group === 'Audio' ? Music2 : service.group === 'Semua' ? Sparkles : Video;
+
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => selectService(service.id)}
+                  aria-pressed={active}
+                  className={`group rounded-2xl border p-3.5 text-left backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 sm:p-4 ${
+                    active
+                      ? 'border-violet-300/50 bg-violet-400/[0.12] shadow-lg shadow-violet-950/20'
+                      : 'border-white/[0.08] bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.065]'
+                  }`}
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className={`grid h-10 w-10 place-items-center rounded-xl border ${
+                      active
+                        ? 'border-violet-300/20 bg-violet-300/10 text-violet-200'
+                        : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 group-hover:text-white'
+                    }`}>
+                      <Icon size={19} />
+                    </span>
+                    {active && <CheckCircle2 size={16} className="text-cyan-200" />}
+                  </div>
+                  <p className="text-sm font-semibold">{service.name}</p>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">{service.description}</p>
+                </button>
+              );
+            })}
+          </section>
+
+          <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <form
+              onSubmit={handleSubmit}
+              className="rounded-3xl border border-white/10 bg-zinc-950/45 p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-7"
             >
-              {loading ? (
-                <>
-                  <LoaderCircle className="animate-spin" size={19} />
-                  Sedang memproses...
-                </>
-              ) : (
-                <>
-                  <Search size={19} />
-                  Proses Sekarang
-                </>
-              )}
-            </button>
-
-            <p className="mt-4 text-center text-xs leading-5 text-slate-500">
-              Gunakan hanya untuk konten yang kamu miliki atau diizinkan untuk diunduh.
-            </p>
-          </form>
-
-          <section className="min-h-72 rounded-3xl border border-white/10 bg-white/[0.035] p-5 backdrop-blur-2xl sm:p-8">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="font-bold">Hasil Proses</h2>
-              <span className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-wider text-slate-400">
-                {loading ? 'Processing' : result ? 'Completed' : 'Ready'}
-              </span>
-            </div>
-
-            {loading ? (
-              <div className="flex min-h-56 flex-col items-center justify-center text-center">
-                <div className="relative mb-7 flex h-20 w-20 items-center justify-center">
-                  <div className="absolute inset-0 animate-spin rounded-full border-2 border-violet-400/20 border-t-violet-300" />
-                  <div className="absolute inset-2 animate-[spin_2s_linear_infinite_reverse] rounded-full border-2 border-cyan-400/20 border-b-cyan-300" />
-                  <Download className="animate-pulse text-violet-200" size={25} />
+              <div className="mb-6 flex items-center gap-3">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl border border-violet-300/15 bg-violet-400/10 text-violet-200">
+                  <Download size={22} />
                 </div>
-                <p className="font-semibold">{stage}</p>
-                <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
-                  Tunggu sebentar. Waktu proses bergantung pada server penyedia.
-                </p>
-                <div className="mt-6 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/5">
-                  <div className="h-full w-1/3 animate-[pulse_1.5s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-violet-400 to-cyan-300" />
+                <div>
+                  <h2 className="font-bold">Siapkan media</h2>
+                  <p className="mt-1 text-xs text-zinc-500">{selected.name} · {selected.description}</p>
                 </div>
               </div>
-            ) : result ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
-                  <CheckCircle2 size={18} />
-                  Respons server diterima
-                </div>
 
-                {result.links.length > 0 ? (
-                  result.links.map((link: string, index: number) => (
-                    <div
-                      key={`${link}-${index}`}
-                      className="rounded-xl border border-white/10 bg-black/20 p-4"
-                    >
-                      <p className="mb-2 text-xs text-slate-400">
-                        Tautan media {index + 1}
+              <label htmlFor="media-input" className="mb-2 block text-sm font-medium text-zinc-300">
+                {selected.query ? 'Judul lagu atau nama artis' : 'Tautan media'}
+              </label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300/60">
+                {selected.query
+                  ? <Search size={17} className="shrink-0 text-zinc-500" />
+                  : <Link2 size={17} className="shrink-0 text-zinc-500" />}
+                <input
+                  id="media-input"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder={selected.placeholder}
+                  type={selected.query ? 'text' : 'url'}
+                  autoComplete="off"
+                  className="min-w-0 flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-zinc-600"
+                />
+                {input && (
+                  <button type="button" aria-label="Hapus input" onClick={() => setInput('')} className="rounded-lg p-1 text-zinc-500 hover:bg-white/10 hover:text-white">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+
+              {selected.resolutions && (
+                <label className="mt-5 block">
+                  <span className="mb-2 block text-sm font-medium text-zinc-300">Kualitas video</span>
+                  <select
+                    value={resolution}
+                    onChange={(event) => setResolution(event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-[#11121b] px-4 py-3.5 text-sm outline-none focus:border-violet-300/60"
+                  >
+                    {selected.resolutions.map((quality) => (
+                      <option key={quality} value={quality}>{quality}p</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {error && (
+                <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 px-5 py-3.5 text-sm font-bold shadow-lg shadow-violet-950/30 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Sedang memproses...
+                  </>
+                ) : (
+                  <><Download size={17} /> Cari media dan unduh</>
+                )}
+              </button>
+
+              <p className="mt-4 text-xs leading-5 text-zinc-500">
+                Gunakan hanya untuk media yang kamu miliki atau yang boleh kamu unduh.
+                Hasil bergantung pada ketersediaan server sumber.
+              </p>
+            </form>
+
+            <section className="min-w-0 rounded-3xl border border-white/10 bg-zinc-950/40 p-5 shadow-xl shadow-black/10 backdrop-blur-2xl sm:p-7">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">Hasil media</h2>
+                  <p className="mt-1 text-xs text-zinc-500">Preview, detail, dan pilihan unduhan</p>
+                </div>
+                {result && (
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-400/[0.08] px-3 py-1.5 text-xs text-emerald-200">
+                    {result.media.length} file
+                  </span>
+                )}
+              </div>
+
+              {!result && !loading && (
+                <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+                  <div>
+                    <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-400">
+                      <FileVideo size={25} />
+                    </div>
+                    <p className="font-semibold text-zinc-200">Belum ada hasil</p>
+                    <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-zinc-500">
+                      Pilih platform, masukkan tautan, lalu tekan tombol untuk memulai.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {loading && (
+                <div className="grid min-h-64 place-items-center rounded-2xl border border-white/10 bg-white/[0.025] p-6 text-center">
+                  <div>
+                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-300/20 bg-violet-400/10">
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-violet-200/30 border-t-cyan-200" />
+                    </div>
+                    <p className="font-semibold">Menghubungi server media</p>
+                    <p className="mt-2 text-sm text-zinc-500">Sedang mencari detail dan file yang tersedia...</p>
+                    <div className="mx-auto mt-5 flex max-w-48 gap-1">
+                      <span className="h-1.5 flex-1 animate-pulse rounded-full bg-violet-400/70" />
+                      <span className="h-1.5 flex-1 animate-pulse rounded-full bg-fuchsia-400/70 [animation-delay:150ms]" />
+                      <span className="h-1.5 flex-1 animate-pulse rounded-full bg-cyan-400/70 [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {result && (
+                <div className="space-y-5">
+                  <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
+                    {result.metadata.thumbnail && isSafeMediaUrl(result.metadata.thumbnail) && (
+                      <img
+                        src={result.metadata.thumbnail}
+                        alt="Thumbnail media"
+                        loading="lazy"
+                        className="max-h-72 w-full bg-black/30 object-cover"
+                        onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
+                    <div className="p-4 sm:p-5">
+                      <p className="text-lg font-bold leading-7">
+                        {result.metadata.title || 'Media berhasil diproses'}
                       </p>
-                      <p className="break-all text-xs leading-5 text-slate-300">
-                        {link}
-                      </p>
+                      {result.metadata.description && (
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-400">
+                          {result.metadata.description}
+                        </p>
+                      )}
+                      {result.metadata.author && (
+                        <p className="mt-3 flex items-center gap-2 text-sm text-zinc-400">
+                          <UserRound size={15} /> {result.metadata.author}
+                        </p>
+                      )}
+
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg bg-violet-500/20 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-500/30"
-                        >
-                          <Download size={15} />
-                          Buka media
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => copyText(link)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
-                        >
-                          <Copy size={15} />
-                          Salin tautan
-                        </button>
+                        {result.metadata.duration && (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+                            <Clock3 size={14} /> {formatDuration(result.metadata.duration)}
+                          </span>
+                        )}
+                        {result.metadata.views && (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+                            <Eye size={14} /> {formatNumber(result.metadata.views)} views
+                          </span>
+                        )}
+                        {result.metadata.likes && (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+                            <Heart size={14} /> {formatNumber(result.metadata.likes)} likes
+                          </span>
+                        )}
+                        {result.metadata.size && (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+                            Ukuran: {result.metadata.size}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100">
-                    Respons diterima, tetapi tautan unduhan belum dikenali. Periksa JSON mentah di bawah.
-                  </div>
-                )}
+                  </article>
 
-                <details className="rounded-xl border border-white/10 bg-black/20 p-4">
-                  <summary className="cursor-pointer text-sm text-slate-300">
-                    Lihat JSON mentah
-                  </summary>
-                  <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs leading-5 text-slate-400">
-                    {JSON.stringify(result.data, null, 2)}
-                  </pre>
-                </details>
-              </div>
-            ) : (
-              <div className="flex min-h-56 flex-col items-center justify-center text-center">
-                <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-                  <RotateCw size={28} className="text-slate-500" />
+                  {result.media.length > 0 ? (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold text-zinc-200">File yang tersedia</h3>
+                      {result.media.map((media, index) => (
+                        <article key={`${media.url}-${index}`} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${
+                              media.kind === 'audio'
+                                ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200'
+                                : 'border-violet-300/20 bg-violet-400/10 text-violet-200'
+                            }`}>
+                              {media.kind === 'audio' ? <AudioLines size={20} /> : <Video size={20} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold">{media.kind === 'audio' ? 'Audio' : media.kind === 'video' ? 'Video' : 'File media'} {media.quality ? `· ${media.quality}` : ''}</p>
+                              <p className="mt-1 break-all text-xs text-zinc-500">
+                                {media.kind === 'audio' ? 'Format audio dari server' : media.kind === 'video' ? 'Format video dari server' : 'Format mengikuti server'}
+                              </p>
+                            </div>
+                            <a
+                              href={media.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              download
+                              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 px-3 py-2.5 text-xs font-bold transition hover:brightness-110 sm:px-4 sm:text-sm"
+                            >
+                              <Download size={15} /> Unduh
+                            </a>
+                          </div>
+
+                          {media.kind === 'video' && (
+                            <video
+                              controls
+                              preload="none"
+                              playsInline
+                              className="mt-4 max-h-80 w-full rounded-xl bg-black"
+                              src={media.url}
+                            >
+                              Browser kamu tidak mendukung pemutar video.
+                            </video>
+                          )}
+
+                          {media.kind === 'audio' && (
+                            <audio controls preload="none" className="mt-4 w-full" src={media.url}>
+                              Browser kamu tidak mendukung pemutar audio.
+                            </audio>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-amber-300/15 bg-amber-400/[0.06] p-4">
+                      <p className="font-semibold text-amber-100">File media belum dikenali</p>
+                      <p className="mt-2 text-sm leading-6 text-zinc-400">
+                        Server sudah memberi respons, tetapi format file unduhan tidak ditemukan
+                        pada data yang diterima. Buka detail respons untuk pemeriksaan teknis.
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowDetails((current) => !current)}
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.07]"
+                  >
+                    {showDetails ? 'Sembunyikan detail teknis' : 'Lihat detail teknis API'}
+                  </button>
+
+                  {showDetails && (
+                    <pre className="max-h-80 overflow-auto rounded-xl border border-white/10 bg-black/40 p-4 text-xs leading-5 text-cyan-100/80">
+                      {JSON.stringify(result.raw, null, 2)}
+                    </pre>
+                  )}
                 </div>
-                <p className="font-semibold text-slate-300">Siap memproses</p>
-                <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
-                  Pilih platform dan masukkan tautan. Hasil akan muncul di sini.
-                </p>
-              </div>
-            )}
+              )}
+            </section>
           </section>
-        </section>
 
-        <footer className="mt-12 text-center text-xs text-slate-600">
-          ScriptStationV2 · Downloader Hub
-        </footer>
-      </div>
-    </main>
+          <p className="mt-6 text-center text-xs leading-5 text-zinc-600">
+            Gunakan secara bertanggung jawab dan hormati hak cipta pemilik media.
+          </p>
+        </div>
+      </main>
+    </Shell>
   );
 }
