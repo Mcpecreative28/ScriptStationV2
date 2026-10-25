@@ -531,7 +531,7 @@ function LoadingPanel({ serviceId }: { serviceId: ServiceId }) {
         ) : isInstagram ? (
           <div className="relative mx-auto mb-6 grid h-24 w-24 place-items-center rounded-[2rem] border border-pink-300/20 bg-gradient-to-br from-amber-400/15 via-pink-500/15 to-violet-500/20">
             <div className="absolute inset-2 animate-[spin_5s_linear_infinite] rounded-[1.5rem] border-2 border-pink-300/60" />
-            <Instagram size={42} className="text-pink-200" />
+            <Camera size={42} className="text-pink-200" />
             <span className="absolute -right-1 -top-1 h-4 w-4 animate-ping rounded-full bg-amber-300 shadow-[0_0_18px_rgba(252,211,77,0.8)]" />
           </div>
         ) : isYouTube ? (
