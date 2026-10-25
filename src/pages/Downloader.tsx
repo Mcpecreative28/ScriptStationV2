@@ -5,7 +5,7 @@ import {
   Disc3,
   Film,
   Globe2,
-  Instagram,
+  Camera,
   Radio,
   CheckCircle2,
   Clock3,
