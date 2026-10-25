@@ -83,6 +83,26 @@ const SERVICES: Service[] = [
   { id: 'ytmp3-v1', name: 'YouTube MP3 V1', group: 'Audio', description: 'Server audio alternatif', placeholder: 'https://youtu.be/...' },
 ];
 
+
+const PLATFORMS: Record<ServiceId, string> = {
+  aio: 'aio',
+  facebook: 'facebook',
+  instagram: 'instagram',
+  'instagram-v1': 'instagram',
+  'instagram-v2': 'instagram',
+  snackvideo: 'snackvideo',
+  spotify: 'spotify',
+  'spotify-v1': 'spotify',
+  spotifyplay: 'spotifyplay',
+  threads: 'threads',
+  tiktok: 'tiktok',
+  twitter: 'twitter',
+  ytmp3: 'ytmp3',
+  'ytmp3-v1': 'ytmp3',
+  ytmp4: 'ytmp4',
+  'ytmp4-v1': 'ytmp4',
+};
+
 const ENDPOINTS: Record<ServiceId, string> = {
   aio: 'aio',
   facebook: 'facebook',
@@ -295,14 +315,19 @@ export default function Downloader() {
     setLoading(true);
 
     try {
-      const params = new URLSearchParams();
-      params.set('service', ENDPOINTS[serviceId]);
-      params.set(selected.query ? 'q' : 'url', value);
+      
+const params = new URLSearchParams();
 
-      if (selected.resolutions) params.set('resolusi', resolution);
+params.set('platform', PLATFORMS[serviceId]);
+params.set('server', ENDPOINTS[serviceId]);
+params.set(selected.query ? 'q' : 'url', value);
 
-      const response = await fetch(`/api/downloader?${params.toString()}`);
-      const payload: unknown = await response.json();
+if (selected.resolutions) {
+  params.set('resolusi', resolution);
+}
+
+const response = await fetch(`/api/downloader?${params.toString()}`);
+const payload: unknown = await response.json();
 
       if (!response.ok) {
         const message = isRecord(payload)
