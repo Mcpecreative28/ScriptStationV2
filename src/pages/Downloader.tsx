@@ -124,7 +124,7 @@ const SERVICES: Service[] = [
     name: 'Threads',
     group: 'Video',
     description: 'Media dari Threads',
-    placeholder: 'https://www.threads.net/...',
+    placeholder: 'https://www.threads.com/...',
   },
   {
     id: 'twitter',
