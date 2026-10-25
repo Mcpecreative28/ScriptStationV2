@@ -351,9 +351,9 @@ export default function Downloader() {
                 SCRIPTSTATION V2 / MEDIA HUB
               </div>
               <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-                Media kamu,{' '}
+                Download,{' '}
                 <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-200 bg-clip-text text-transparent">
-                  satu tempat.
+                  Anything.
                 </span>
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
