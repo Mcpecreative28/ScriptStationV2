@@ -53,7 +53,7 @@ const validHosts: Record<string, string[]> = {
   instagram: ['instagram.com', 'www.instagram.com'],
   snackvideo: ['snackvideo.com', 'www.snackvideo.com'],
   spotify: ['open.spotify.com'],
-  threads: ['threads.net', 'www.threads.net'],
+  threads: ['threads.com', 'www.threads.com'],
   tiktok: ['tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'],
   twitter: ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'],
   ytmp3: ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'],
