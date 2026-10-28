@@ -1,4 +1,3 @@
-
 import { createHmac, randomUUID } from 'node:crypto';
 
 type ApiRequest = {
@@ -320,51 +319,155 @@ async function runScraper(path: string) {
 
 /* ---------------------- RESULT MAPPER ---------------------- */
 
-function mapVideoResult(result: any, input: string) {
-  const video = result?.video || {};
-  const stats = video.stats || {};
-  const author = result?.authorDetail || {};
 
-  const rawLinks = Array.isArray(result?.presetLinks)
+function extractVideoId(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+
+    if (
+      host === 'youtu.be' ||
+      host.endsWith('.youtu.be')
+    ) {
+      return url.pathname.split('/').filter(Boolean)[0] || null;
+    }
+
+    if (
+      host === 'youtube.com' ||
+      host.endsWith('.youtube.com')
+    ) {
+      const id =
+        url.searchParams.get('v') ||
+        url.pathname.match(/\/(?:shorts|embed|live)\/([^/?]+)/)?.[1];
+
+      return id || null;
+    }
+
+    const tiktokId = url.pathname.match(/\/video\/(\d+)/)?.[1];
+    return tiktokId || null;
+  } catch {
+    return null;
+  }
+}
+
+function isVideoPlatformUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+
+    return (
+      host === 'youtube.com' ||
+      host.endsWith('.youtube.com') ||
+      host === 'youtu.be' ||
+      host.endsWith('.youtu.be') ||
+      host === 'tiktok.com' ||
+      host.endsWith('.tiktok.com')
+    );
+  } catch {
+    return true;
+  }
+}
+
+function isGenericPresetTitle(value: string): boolean {
+  const title = value.trim().toLowerCase();
+
+  return (
+    !title ||
+    /^(am preset vip|full preset|preset alight motion|alight motion preset|preset)$/i.test(title)
+  );
+}
+
+function mapVideoResult(result: any, input: string) {
+  if (!result || typeof result !== 'object') {
+    throw new Error('[BAD_SCRAPER_RESULT] Respons scraper tidak valid.');
+  }
+
+  const video = result.video || {};
+  const stats = video.stats || {};
+  const author = result.authorDetail || {};
+
+  const returnedVideoUrl =
+    safeUrl(result.videoUrl) ||
+    safeUrl(video.url);
+
+  const inputId = extractVideoId(input);
+  const returnedId = returnedVideoUrl
+    ? extractVideoId(returnedVideoUrl)
+    : null;
+
+  // Jika kedua ID tersedia, pastikan hasil memang berasal dari video yang diminta.
+  if (
+    inputId &&
+    returnedId &&
+    inputId !== returnedId
+  ) {
+    throw new Error(
+      '[BAD_SCRAPER_RESULT] Video hasil scraper tidak cocok dengan link yang dimasukkan.'
+    );
+  }
+
+  const rawLinks = Array.isArray(result.presetLinks)
     ? result.presetLinks
     : [];
 
-  const videoUrl = safeUrl(
-    result?.videoUrl || video.url
-  ) || input;
-
   const presetLinks = rawLinks
-    .map((item: any, index: number) => ({
-      type: String(item?.type || 'Preset'),
-      url: safeUrl(item?.url) || '',
-      title: String(item?.title || `Preset ${index + 1}`),
-      thumb: safeUrl(item?.thumb),
-      thumbs: Array.isArray(item?.thumbs)
-        ? item.thumbs.map(safeUrl).filter(Boolean)
-        : [],
-      size: item?.size ? String(item.size) : undefined,
-      ratio: item?.ratio ? String(item.ratio) : undefined,
-      source: item?.source ? String(item.source) : undefined,
-      detail: item?.detail ? String(item.detail) : undefined,
-      verified: item?.verified === true,
-    }))
-    .filter((item: any) => item.url);
+    .map((item: any, index: number) => {
+      const target = safeUrl(item?.url);
+
+      // Jangan tampilkan link video YouTube/TikTok sebagai link preset.
+      if (!target || isVideoPlatformUrl(target)) {
+        return null;
+      }
+
+      const originalTitle =
+        typeof item?.title === 'string'
+          ? item.title.trim()
+          : '';
+
+      return {
+        type: String(item?.type || 'Preset'),
+        url: target,
+        title: isGenericPresetTitle(originalTitle)
+          ? `Tautan preset ${index + 1}`
+          : originalTitle,
+        thumb:
+          safeUrl(item?.thumb) ||
+          safeUrl(item?.thumbnail) ||
+          safeUrl(video.cover),
+        thumbs: Array.isArray(item?.thumbs)
+          ? item.thumbs.map(safeUrl).filter(Boolean)
+          : [],
+        size: item?.size ? String(item.size) : undefined,
+        ratio: item?.ratio ? String(item.ratio) : undefined,
+        source: item?.source ? String(item.source) : undefined,
+        detail: item?.detail ? String(item.detail) : undefined,
+        verified: item?.verified === true,
+      };
+    })
+    .filter(Boolean);
+
+  const description =
+    typeof video.description === 'string'
+      ? video.description
+      : '';
 
   return {
     success: true,
     message: presetLinks.length
-      ? 'Pemindaian selesai.'
-      : 'Pemindaian selesai, tetapi belum ada preset yang ditemukan.',
+      ? 'Pemindaian selesai. Periksa tujuan tautan sebelum membukanya.'
+      : 'Belum ditemukan tautan preset yang lolos pemeriksaan.',
     data: {
       ok: true,
-      found: result?.found !== false && presetLinks.length > 0,
-      mode: 'url',
+      found: presetLinks.length > 0,
       input,
-      author: author.nickname || result?.author || undefined,
-      videoUrl,
+      author: author.nickname || result.author || undefined,
+      videoUrl: returnedVideoUrl || input,
       presetLinks,
       video: {
-        description: video.description || '',
+        title:
+          typeof video.title === 'string'
+            ? video.title
+            : undefined,
+        description,
         cover: safeUrl(video.cover),
         stats: {
           views: stats.views != null ? Number(stats.views) : undefined,
@@ -375,19 +478,18 @@ function mapVideoResult(result: any, input: string) {
         },
       },
       authorDetail: {
-        nickname: author.nickname || result?.author || undefined,
+        nickname: author.nickname || result.author || undefined,
         avatar: safeUrl(author.avatar),
       },
       scan: {
-        comments: result?.scanned?.comments ?? null,
-        replies: result?.scanned?.replies ?? null,
+        comments: result.scanned?.comments ?? null,
+        replies: result.scanned?.replies ?? null,
         commentsDisabled:
-          result?.checked?.commentsDisabled === true,
+          result.checked?.commentsDisabled === true,
       },
-      message:
-        result?.checked?.commentsDisabled && !presetLinks.length
-          ? 'Komentar video dinonaktifkan. Tautan preset di komentar mungkin tidak dapat diperiksa.'
-          : undefined,
+      message: result.checked?.commentsDisabled
+        ? 'Komentar dinonaktifkan; sebagian tautan preset mungkin tidak terjangkau.'
+        : undefined,
     },
   };
 }
@@ -551,16 +653,104 @@ export default async function handler(
       mapVideoResult(result.result, input)
     );
   } catch (scraperError) {
-    // API lama hanya menjadi fallback untuk pencarian link video.
+    // Jangan fallback jika scraper sudah mengembalikan video yang salah.
+    // Ini mencegah hasil video lain (misalnya Rickroll) ditampilkan.
+    if (
+      scraperError instanceof Error &&
+      scraperError.message.startsWith('[BAD_SCRAPER_RESULT]')
+    ) {
+      return res.status(502).json({
+        success: false,
+        error: scraperError.message.replace('[BAD_SCRAPER_RESULT] ', ''),
+      });
+    }
+
     try {
       const backup = await legacyFallback(input);
+      const backupData = backup?.data;
 
-      return res.status(200).json(backup);
-    } catch {
+      if (
+        !backup ||
+        backup.success !== true ||
+        !backupData ||
+        typeof backupData !== 'object'
+      ) {
+        throw new Error('Format respons API cadangan tidak valid.');
+      }
+
+      const backupVideoUrl =
+        safeUrl(backupData.videoUrl) ||
+        safeUrl(backupData.video?.url);
+      const inputId = extractVideoId(input);
+      const backupId = backupVideoUrl
+        ? extractVideoId(backupVideoUrl)
+        : null;
+
+      // Jika ID video tidak dapat diverifikasi, jangan tampilkan hasil backup.
+      if (!backupVideoUrl || !inputId || !backupId || inputId !== backupId) {
+        throw new Error('Video dari API cadangan tidak cocok atau tidak dapat diverifikasi.');
+      }
+
+      const rawLinks = Array.isArray(backupData.presetLinks)
+        ? backupData.presetLinks
+        : [];
+
+      const presetLinks = rawLinks
+        .map((item: any, index: number) => {
+          const target = safeUrl(item?.url);
+          if (!target || isVideoPlatformUrl(target)) return null;
+
+          const originalTitle =
+            typeof item?.title === 'string' ? item.title.trim() : '';
+
+          return {
+            type: String(item?.type || 'Preset'),
+            url: target,
+            title: isGenericPresetTitle(originalTitle)
+              ? `Tautan preset ${index + 1}`
+              : originalTitle,
+            thumb:
+              safeUrl(item?.thumb) ||
+              safeUrl(item?.thumbnail) ||
+              safeUrl(backupData.video?.cover),
+            thumbs: Array.isArray(item?.thumbs)
+              ? item.thumbs.map(safeUrl).filter(Boolean)
+              : [],
+            size: item?.size ? String(item.size) : undefined,
+            ratio: item?.ratio ? String(item.ratio) : undefined,
+            source: item?.source ? String(item.source) : undefined,
+            detail: item?.detail ? String(item.detail) : undefined,
+            verified: false,
+          };
+        })
+        .filter(Boolean);
+
+      return res.status(200).json({
+        success: true,
+        fallback: true,
+        message: presetLinks.length
+          ? 'Hasil dari API cadangan. Periksa tujuan tautan sebelum membuka.'
+          : 'Tidak ditemukan tautan preset yang lolos pemeriksaan.',
+        data: {
+          ...backupData,
+          ok: true,
+          found: presetLinks.length > 0,
+          input,
+          videoUrl: backupVideoUrl,
+          presetLinks,
+          video: {
+            ...(backupData.video || {}),
+            cover: safeUrl(backupData.video?.cover),
+          },
+        },
+      });
+    } catch (fallbackError) {
       return res.status(502).json({
         success: false,
         error:
-          'Scraper utama dan API cadangan sedang tidak tersedia. Coba lagi nanti.',
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : 'Scraper utama dan API cadangan gagal memberikan hasil yang valid.',
         detail:
           scraperError instanceof Error
             ? scraperError.message
