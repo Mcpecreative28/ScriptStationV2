@@ -11,7 +11,6 @@ import {
   ScanSearch,
   Sparkles,
   Video,
-  Youtube,
   Link2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -776,7 +775,7 @@ export default function AMFinder() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
                   <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-300/[0.08] text-violet-200">
-                    <Youtube size={19} />
+                    <Video size={19} />
                   </div>
 
                   <h3 className="font-medium text-white/85">
