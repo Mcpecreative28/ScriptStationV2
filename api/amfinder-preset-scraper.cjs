@@ -263,100 +263,279 @@ async function scrapeYouTube(url) {
   };
 }
 
+
 async function scrapeTikTok(url) {
   const cleanUrl = url.trim();
   let vData = null;
   let lastError = null;
 
-  // Retry up to 3 times if TikWM hits rate limit (1 req/sec)
+  // 1. Ambil informasi video TikTok.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const body = new URLSearchParams({
+        url: cleanUrl,
+        count: "50",
+      });
+
       const res = await fetch("https://www.tikwm.com/api/", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `url=${encodeURIComponent(cleanUrl)}&count=50`,
-        signal: AbortSignal.timeout(10000),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0",
+        },
+        body: body.toString(),
+        signal: AbortSignal.timeout(6000),
       });
 
       const json = await res.json();
-      if (json.code === 0 && json.data) {
+
+      if ((json.code === 0 || json.code === "0") && json.data) {
         vData = json.data;
         break;
       }
 
-      if (json.msg && json.msg.includes("Limit")) {
-        await new Promise((r) => setTimeout(r, 1200));
+      lastError = new Error(
+        json.msg || "Layanan TikTok tidak memberikan data video."
+      );
+
+      if (/limit|频繁|rate/i.test(json.msg || "")) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
         continue;
       }
-
-      throw new Error(json.msg || "Gagal mengambil data video TikTok.");
-    } catch (err) {
-      lastError = err;
-      await new Promise((r) => setTimeout(r, 1200));
+    } catch (error) {
+      lastError = error;
     }
   }
 
-  // Fallback: oEmbed resolution if TikWM is unavailable or limited
+  // Fallback untuk mendapatkan URL kanonis dan metadata dasar.
   if (!vData) {
     try {
-      const headRes = await fetch(cleanUrl, { method: "HEAD", redirect: "follow" });
-      const canonicalUrl = headRes.url || cleanUrl;
-      const oembedRes = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(canonicalUrl)}`);
-      if (oembedRes.ok) {
-        const oembedJson = await oembedRes.json();
+      const res = await fetch(
+        `https://www.tiktok.com/oembed?url=${encodeURIComponent(cleanUrl)}`,
+        {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(4000),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+
         vData = {
-          title: oembedJson.title || "",
-          author: { unique_id: oembedJson.author_unique_id || oembedJson.author_name || "" },
+          title: data.title || "",
+          author: {
+            unique_id: data.author_unique_id || "",
+            nickname: data.author_name || "",
+          },
         };
       }
-    } catch {}
+    } catch {
+      // Jika fallback gagal, laporkan error di bawah.
+    }
   }
 
   if (!vData) {
-    throw lastError || new Error("Gagal mengambil data video TikTok (Rate limit).");
+    throw lastError || new Error("Gagal mengambil data video TikTok.");
   }
 
   const authorUniqueId = vData.author?.unique_id || "";
   const authorNickname = vData.author?.nickname || "";
   const authorAvatar = vData.author?.avatar || "";
   const videoId = String(vData.id || "");
-  const canonicalVideoUrl = authorUniqueId && videoId 
-    ? `https://www.tiktok.com/@${authorUniqueId}/video/${videoId}` 
-    : cleanUrl;
 
-  let commentsList = [];
-  try {
-    const commentsRes = await fetch(
-      `https://www.tikwm.com/api/comment/list?url=${encodeURIComponent(cleanUrl)}&count=50`,
-      {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(6000),
-      }
-    );
-    if (commentsRes.ok) {
-      const cJson = await commentsRes.json();
-      if (cJson.code === 0 && Array.isArray(cJson.data?.comments)) {
-        commentsList = cJson.data.comments;
-      }
-    }
-  } catch {}
+  const canonicalVideoUrl =
+    authorUniqueId && videoId
+      ? `https://www.tiktok.com/@${authorUniqueId}/video/${videoId}`
+      : cleanUrl;
 
-  const scanItems = [
-    { text: vData.title || "", pinned: true, byAuthor: true, sourceType: "description" }
-  ];
+  // Menyimpan semua teks yang akan diperiksa oleh ekstraktor preset.
+  const scanItems = [];
 
-  for (const c of commentsList) {
-    const isPinned = Boolean(c.is_pinned || c.status === 2);
-    const isAuthor = c.user?.unique_id === authorUniqueId;
+  if (vData.title) {
     scanItems.push({
-      text: c.text || "",
-      pinned: isPinned,
-      byAuthor: isAuthor,
+      text: vData.title,
+      pinned: false,
+      byAuthor: true,
+      sourceType: "description",
+    });
+  }
+
+  // 2. Ambil beberapa halaman komentar menggunakan cursor.
+  let cursor = 0;
+  const seenCursors = new Set();
+  const commentsMap = new Map();
+
+  for (let page = 0; page < 3; page++) {
+    try {
+      const params = new URLSearchParams({
+        url: canonicalVideoUrl,
+        count: "50",
+        cursor: String(cursor),
+      });
+
+      const res = await fetch(
+        `https://www.tikwm.com/api/comment/list?${params.toString()}`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0",
+            Accept: "application/json",
+            Referer: "https://www.tikwm.com/",
+          },
+          signal: AbortSignal.timeout(3500),
+        }
+      );
+
+      if (!res.ok) break;
+
+      const json = await res.json();
+
+      if (json.code !== 0 && json.code !== "0") break;
+
+      const data = json.data;
+      const comments = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.comments)
+          ? data.comments
+          : [];
+
+      for (const comment of comments) {
+        const id = String(comment?.id || "");
+        const text = comment?.text || comment?.content || "";
+
+        if (typeof text !== "string" || !text.trim()) continue;
+
+        const user =
+          comment?.user || comment?.author || comment?.user_info || {};
+
+        const userId =
+          user?.unique_id || user?.uniqueId || user?.unique_id_str || "";
+
+        commentsMap.set(id || `${userId}:${text}`, {
+          id,
+          text,
+          userId,
+          pinned: Boolean(
+            comment?.is_pinned ||
+            comment?.pinned ||
+            comment?.stick_position
+          ),
+          byAuthor: Boolean(
+            authorUniqueId && userId === authorUniqueId
+          ),
+          replyTotal: Number(
+            comment?.reply_total || comment?.reply_count || 0
+          ),
+        });
+      }
+
+      const hasMore = Boolean(data?.hasMore ?? data?.has_more);
+      const nextCursor = data?.cursor;
+
+      if (
+        !hasMore ||
+        nextCursor == null ||
+        seenCursors.has(String(nextCursor))
+      ) {
+        break;
+      }
+
+      seenCursors.add(String(nextCursor));
+      cursor = nextCursor;
+    } catch {
+      // Tetap gunakan komentar yang berhasil diambil sebelumnya.
+      break;
+    }
+  }
+
+  const comments = Array.from(commentsMap.values());
+
+  // 3. Ambil balasan komentar dari beberapa komentar yang punya replies.
+  // Dibatasi agar waktu eksekusi server tidak berlebihan.
+  const replyTargets = comments
+    .filter((comment) => comment.id && comment.replyTotal > 0)
+    .slice(0, 6);
+
+  const replyResults = await Promise.all(
+    replyTargets.map(async (comment) => {
+      try {
+        const params = new URLSearchParams({
+          comment_id: comment.id,
+          count: "50",
+          cursor: "0",
+        });
+
+        const res = await fetch(
+          `https://www.tikwm.com/api/comment/reply?${params.toString()}`,
+          {
+            headers: {
+              "User-Agent": "Mozilla/5.0",
+              Accept: "application/json",
+              Referer: "https://www.tikwm.com/",
+            },
+            signal: AbortSignal.timeout(3500),
+          }
+        );
+
+        if (!res.ok) return [];
+
+        const json = await res.json();
+
+        if (json.code !== 0 && json.code !== "0") return [];
+
+        const data = json.data;
+        const replies = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.comments)
+            ? data.comments
+            : [];
+
+        return replies
+          .filter(
+            (reply) =>
+              typeof (reply?.text || reply?.content) === "string"
+          )
+          .map((reply) => {
+            const user =
+              reply?.user || reply?.author || reply?.user_info || {};
+
+            const userId =
+              user?.unique_id ||
+              user?.uniqueId ||
+              user?.unique_id_str ||
+              "";
+
+            return {
+              text: reply.text || reply.content,
+              pinned: false,
+              byAuthor: Boolean(
+                authorUniqueId && userId === authorUniqueId
+              ),
+              sourceType: "reply",
+            };
+          });
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  for (const comment of comments) {
+    scanItems.push({
+      text: comment.text,
+      pinned: comment.pinned,
+      byAuthor: comment.byAuthor,
       sourceType: "comment",
     });
   }
 
-  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
+  for (const replies of replyResults) {
+    scanItems.push(...replies);
+  }
+
+  // 4. Ekstrak dan deduplikasi link preset.
+  const { presetLinks, otherLinks } =
+    await extractPresetsFromScanItems(scanItems);
+
   const found = presetLinks.length > 0;
 
   return {
@@ -367,12 +546,14 @@ async function scrapeTikTok(url) {
       found,
       totalPresets: presetLinks.length,
       platform: "tiktok",
-      author: authorUniqueId ? `@${authorUniqueId}` : "",
+      author: authorUniqueId ? `@${authorUniqueId}` : authorNickname,
       authorDetail: {
         uniqueId: authorUniqueId,
         nickname: authorNickname,
         avatar: authorAvatar,
-        profileUrl: authorUniqueId ? `https://www.tiktok.com/@${authorUniqueId}` : "",
+        profileUrl: authorUniqueId
+          ? `https://www.tiktok.com/@${authorUniqueId}`
+          : "",
       },
       videoUrl: canonicalVideoUrl,
       video: {
@@ -380,8 +561,6 @@ async function scrapeTikTok(url) {
         url: canonicalVideoUrl,
         title: vData.title || "",
         cover: vData.cover || vData.origin_cover || "",
-        playUrl: vData.play || "",
-        playUrlNoWm: vData.wmplay || vData.play || "",
         duration: Number(vData.duration || 0),
         stats: {
           views: Number(vData.play_count || 0),
@@ -391,7 +570,11 @@ async function scrapeTikTok(url) {
         },
       },
       presetLinks,
-      message: found ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion.` : "Tidak ditemukan preset pada video TikTok ini.",
+      message: found
+        ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion.`
+        : comments.length === 0
+          ? "Komentar tidak berhasil diakses. Coba lagi nanti atau periksa apakah video dapat diakses publik."
+          : `Sudah memeriksa ${comments.length} komentar dan ${replyResults.reduce((sum, replies) => sum + replies.length, 0)} balasan, tetapi tidak menemukan link preset yang dikenali.`,
       otherLinks: otherLinks.length > 0 ? otherLinks : undefined,
     },
   };

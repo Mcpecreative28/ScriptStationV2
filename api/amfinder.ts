@@ -160,17 +160,41 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    
+    // Domain link tujuan preset tidak harus sama dengan domain input.
+    // Tetap validasi protokol dan tolak alamat lokal.
     const presetLinks = Array.isArray(result.presetLinks)
       ? result.presetLinks.filter((preset) => {
-          if (!preset || typeof preset.url !== 'string') return false;
+          if (
+            !preset ||
+            typeof preset.url !== "string" ||
+            preset.url.length > 4096
+          ) {
+            return false;
+          }
 
           try {
             const parsed = new URL(preset.url);
+            const host = parsed.hostname
+              .toLowerCase()
+              .replace(/^www\./, "");
+
+            const privateHost =
+              host === "localhost" ||
+              host.endsWith(".localhost") ||
+              host.endsWith(".local") ||
+              host === "127.0.0.1" ||
+              host === "::1" ||
+              host.startsWith("10.") ||
+              host.startsWith("192.168.") ||
+              /^172\.(1[6-9]|2\d|3[01])\./.test(host);
 
             return (
-              (parsed.protocol === 'https:' ||
-                parsed.protocol === 'http:') &&
-              isAllowedHost(parsed.hostname)
+              (parsed.protocol === "https:" ||
+                parsed.protocol === "http:") &&
+              !privateHost &&
+              !parsed.username &&
+              !parsed.password
             );
           } catch {
             return false;
