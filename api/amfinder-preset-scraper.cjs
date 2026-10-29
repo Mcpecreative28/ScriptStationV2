@@ -1,7 +1,18 @@
-const URL_REGEX = /https?:\/\/[^\s"'<>\)]+/gi;
-const PRESET_5MB_REGEX = /alight\.link|alightcreative\.com/i;
-const PRESET_XML_REGEX = /drive\.google\.com|mediafire\.com|sfile\.mobi|\.xml(?:\?|$)/i;
+const URL_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:alight\.link|alightcreative\.com|alightmotion\.com|drive\.google\.com|drive\.usercontent\.google\.com|mediafire\.com|sfile\.mobi|mega\.nz|dropbox\.com|1drv\.ms|onedrive\.live\.com|pixeldrain\.com|gofile\.io|catbox\.moe|we\.tl|s\.id|bit\.ly|tinyurl\.com|cutt\.ly|t\.co|rb\.gy|linktr\.ee|heylink\.me|beacons\.ai|taplink\.cc|snipfeed\.co|(?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s"'<>]+)/gi;
+const PRESET_5MB_REGEX = /alight\.link|alightcreative\.com|alightmotion\.com/i;
+const PRESET_XML_REGEX = /drive\.google\.com|drive\.usercontent\.google\.com|mediafire\.com|sfile\.mobi|mega\.nz|dropbox\.com|1drv\.ms|onedrive\.live\.com|pixeldrain\.com|gofile\.io|catbox\.moe|we\.tl|\.xml(?:[?#]|$)/i;
 const SHORTLINK_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:s\.id|bit\.ly|tinyurl\.com|cutt\.ly|t\.co|rb\.gy|linktr\.ee|heylink\.me|beacons\.ai|taplink\.cc|snipfeed\.co)\//i;
+
+function cleanExtractedUrl(value) {
+  return String(value || "").replace(/[.,!?;:]+$/g, "").replace(/[)\]}]+$/g, "");
+}
+
+function normalizeFoundUrls(text) {
+  const matches = String(text || "").match(URL_REGEX) || [];
+  return [...new Set(matches.map(cleanExtractedUrl).filter(Boolean).map(value =>
+    /^https?:\/\//i.test(value) ? value : `https://${value}`
+  ))];
+}
 
 function parseMetaFromText(text) {
   const ratioMatch = text.match(/\b(9:16|16:9|1:1|4:5|3:4|4:3)\b/i);
@@ -79,12 +90,13 @@ async function extractPresetsFromScanItems(scanItems) {
 
   await Promise.all(
     scanItems.map(async (item) => {
-      const urlsInText = item.text.match(URL_REGEX) || [];
+      const urlsInText = normalizeFoundUrls(item.text);
       if (urlsInText.length === 0) return;
 
       const meta = parseMetaFromText(item.text);
 
-      for (const rawUrl of urlsInText) {
+      for (const foundUrl of urlsInText) {
+        const rawUrl = cleanExtractedUrl(foundUrl);
         if (PRESET_5MB_REGEX.test(rawUrl)) {
           if (!presetsMap.has(rawUrl)) {
             presetsMap.set(rawUrl, {
@@ -232,10 +244,97 @@ async function scrapeYouTube(url) {
     }
   } catch {}
 
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  let youtubeCommentsScanned = 0;
+  let youtubeRepliesScanned = 0;
+  let youtubeCommentsUnavailable = false;
+  const youtubeKey = process.env.YOUTUBE_API_KEY;
+
+  // YouTube comments require an API key. If configured, paginate through
+  // every public comment thread and fetch remaining replies when needed.
+  if (youtubeKey) {
+    let pageToken = "";
+    const seenTokens = new Set();
+    try {
+      for (let page = 0; page < 500; page++) {
+        const params = new URLSearchParams({
+          part: "snippet,replies",
+          videoId,
+          maxResults: "100",
+          textFormat: "plainText",
+          key: youtubeKey,
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+        const response = await fetch(
+          `https://www.googleapis.com/youtube/v3/commentThreads?${params}`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || "YouTube comments API gagal.");
+
+        for (const thread of payload.items || []) {
+          const top = thread?.snippet?.topLevelComment;
+          const topText = top?.snippet?.textDisplay || top?.snippet?.textOriginal || "";
+          if (topText) {
+            scanItems.push({ text: topText, pinned: false, byAuthor: false, sourceType: "comment" });
+            youtubeCommentsScanned++;
+          }
+
+          const totalReplies = Number(thread?.snippet?.totalReplyCount || 0);
+          const embedded = thread?.replies?.comments || [];
+          for (const reply of embedded) {
+            const replyText = reply?.snippet?.textDisplay || reply?.snippet?.textOriginal || "";
+            if (replyText) {
+              scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
+              youtubeRepliesScanned++;
+            }
+          }
+
+          if (top?.id && totalReplies > embedded.length) {
+            let replyToken = "";
+            const replyTokens = new Set();
+            for (let rp = 0; rp < 500; rp++) {
+              const rpParams = new URLSearchParams({
+                part: "snippet",
+                parentId: top.id,
+                maxResults: "100",
+                textFormat: "plainText",
+                key: youtubeKey,
+              });
+              if (replyToken) rpParams.set("pageToken", replyToken);
+              const rpResponse = await fetch(
+                `https://www.googleapis.com/youtube/v3/comments?${rpParams}`,
+                { signal: AbortSignal.timeout(10000) }
+              );
+              const rpPayload = await rpResponse.json();
+              if (!rpResponse.ok) throw new Error(rpPayload?.error?.message || "Gagal mengambil balasan YouTube.");
+              for (const reply of rpPayload.items || []) {
+                const replyText = reply?.snippet?.textDisplay || reply?.snippet?.textOriginal || "";
+                if (replyText) {
+                  scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
+                  youtubeRepliesScanned++;
+                }
+              }
+              const nextReplyToken = rpPayload.nextPageToken;
+              if (!nextReplyToken || replyTokens.has(nextReplyToken)) break;
+              replyTokens.add(nextReplyToken);
+              replyToken = nextReplyToken;
+            }
+          }
+        }
+
+        const nextToken = payload.nextPageToken;
+        if (!nextToken || seenTokens.has(nextToken)) break;
+        seenTokens.add(nextToken);
+        pageToken = nextToken;
+      }
+    } catch {
+      youtubeCommentsUnavailable = true;
+    }
+  }
+
   const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
   const found = presetLinks.length > 0;
-
-  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
   return {
     status: true,
     code: 200,
@@ -257,7 +356,19 @@ async function scrapeYouTube(url) {
         cover: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       },
       presetLinks,
-      message: found ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion.` : "Tidak ditemukan preset pada video YouTube ini.",
+      scan: {
+        comments: youtubeCommentsScanned,
+        replies: youtubeRepliesScanned,
+        incomplete: youtubeCommentsUnavailable || !youtubeKey,
+        requiresApiKey: !youtubeKey,
+      },
+      message: found
+        ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion dari sumber video dan komentar yang tersedia.`
+        : !youtubeKey
+          ? "Deskripsi video diperiksa. Untuk memindai komentar dan balasan YouTube, tambahkan YOUTUBE_API_KEY di Environment Variables Vercel."
+          : youtubeCommentsUnavailable
+            ? "Sebagian komentar YouTube tidak berhasil diakses oleh API."
+            : `Sudah memeriksa ${youtubeCommentsScanned} komentar dan ${youtubeRepliesScanned} balasan, tetapi belum menemukan preset yang dikenali.` ,
       otherLinks: otherLinks.length > 0 ? otherLinks : undefined,
     },
   };
@@ -353,7 +464,7 @@ async function scrapeTikTok(url) {
     if (!text) return false;
 
     const id = String(
-      item?.cid || item?.comment_id || item?.id || ""
+      item?.cid || item?.comment_id || item?.commentId || item?.id || ""
     );
     const userId = getUserId(item);
     const key = id || `${userId}:${text}`;
@@ -373,10 +484,10 @@ async function scrapeTikTok(url) {
   byAuthor: Boolean(authorId && userId === authorId),
   sourceType,
   commentId: String(
-    item?.cid || item?.comment_id || item?.id || ""
+    item?.cid || item?.comment_id || item?.commentId || item?.id || ""
   ),
   replyTotal: Number(
-    item?.reply_total || item?.reply_count || 0
+    item?.reply_total || item?.reply_count || item?.reply_comment_total || item?.reply_comment_count || item?.replyCount || item?.total_reply_count || item?.totalReplyCount || 0
   ),
 });
 
@@ -428,7 +539,7 @@ async function scrapeTikTok(url) {
   // Batas pengaman mencegah cursor yang rusak menyebabkan loop selamanya.
   let cursor = "0";
 
-  for (let page = 0; page < 100; page++) {
+  for (let page = 0; page < 500; page++) {
     try {
       const data = await fetchJson("comment/list", {
         url: canonicalUrl,
@@ -441,10 +552,16 @@ async function scrapeTikTok(url) {
 
       for (const comment of comments) {
         addComment(comment, "comment");
+        const embeddedReplies = Array.isArray(comment?.replies)
+          ? comment.replies
+          : Array.isArray(comment?.reply_list)
+            ? comment.reply_list
+            : [];
+        for (const reply of embeddedReplies) addComment(reply, "reply");
       }
 
-      const hasMore = Boolean(data?.hasMore ?? data?.has_more);
-      const nextCursor = data?.cursor;
+      const hasMore = Boolean(data?.hasMore ?? data?.has_more ?? data?.has_more_comments);
+      const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor;
 
       if (
         !hasMore ||
@@ -487,14 +604,13 @@ async function scrapeTikTok(url) {
   // properti sementara yang diisi pada setiap item.
   const targets = scanItems
     .filter(item => item.sourceType === "comment" && item.commentId)
-    .filter(item => Number(item.replyTotal || 0) > 0)
-    .slice(0, 200);
+    .filter(item => Number(item.replyTotal || 0) > 0);
 
   for (const target of targets) {
     let replyCursor = "0";
     const replyCursors = new Set();
 
-    for (let page = 0; page < 100; page++) {
+    for (let page = 0; page < 500; page++) {
       try {
         const data = await fetchJson("comment/reply", {
           comment_id: String(target.commentId),
@@ -508,8 +624,8 @@ async function scrapeTikTok(url) {
           addComment(reply, "reply");
         }
 
-        const hasMore = Boolean(data?.hasMore ?? data?.has_more);
-        const nextCursor = data?.cursor;
+        const hasMore = Boolean(data?.hasMore ?? data?.has_more ?? data?.has_more_comments);
+        const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor;
 
         if (
           !hasMore ||
@@ -632,6 +748,25 @@ async function scrapeInstagram(url) {
   const scanItems = [
     { text: caption, pinned: true, byAuthor: true, sourceType: "description" },
   ];
+
+  // Scan comments/replies only when the public response actually provides them.
+  const commentEdges =
+    item.edge_media_to_parent_comment?.edges ||
+    item.edge_media_to_comment?.edges ||
+    item.comments?.edges ||
+    [];
+  for (const edge of commentEdges) {
+    const comment = edge?.node || edge;
+    const text = comment?.text || comment?.comment_text || "";
+    if (text) scanItems.push({ text, pinned: false, byAuthor: false, sourceType: "comment" });
+
+    const replies = comment?.edge_threaded_comments?.edges || comment?.replies?.edges || [];
+    for (const replyEdge of replies) {
+      const reply = replyEdge?.node || replyEdge;
+      const replyText = reply?.text || reply?.comment_text || "";
+      if (replyText) scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
+    }
+  }
 
   const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
   const found = presetLinks.length > 0;
