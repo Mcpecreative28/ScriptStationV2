@@ -269,25 +269,20 @@ async function scrapeTikTok(url) {
   let vData = null;
   let lastError = null;
 
-  // 1. Ambil informasi video TikTok.
+  // Ambil data video dan coba ulang jika layanan sedang membatasi request.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const body = new URLSearchParams({
-        url: cleanUrl,
-        count: "50",
-      });
-
-      const res = await fetch("https://www.tikwm.com/api/", {
+      const response = await fetch("https://www.tikwm.com/api/", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "Mozilla/5.0",
         },
-        body: body.toString(),
-        signal: AbortSignal.timeout(6000),
+        body: new URLSearchParams({ url: cleanUrl }).toString(),
+        signal: AbortSignal.timeout(8000),
       });
 
-      const json = await res.json();
+      const json = await response.json();
 
       if ((json.code === 0 || json.code === "0") && json.data) {
         vData = json.data;
@@ -295,61 +290,39 @@ async function scrapeTikTok(url) {
       }
 
       lastError = new Error(
-        json.msg || "Layanan TikTok tidak memberikan data video."
+        json.msg || "Gagal mengambil informasi video."
       );
-
-      if (/limit|频繁|rate/i.test(json.msg || "")) {
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        continue;
-      }
     } catch (error) {
       lastError = error;
     }
-  }
 
-  // Fallback untuk mendapatkan URL kanonis dan metadata dasar.
-  if (!vData) {
-    try {
-      const res = await fetch(
-        `https://www.tiktok.com/oembed?url=${encodeURIComponent(cleanUrl)}`,
-        {
-          headers: { "User-Agent": "Mozilla/5.0" },
-          signal: AbortSignal.timeout(4000),
-        }
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-
-        vData = {
-          title: data.title || "",
-          author: {
-            unique_id: data.author_unique_id || "",
-            nickname: data.author_name || "",
-          },
-        };
-      }
-    } catch {
-      // Jika fallback gagal, laporkan error di bawah.
+    if (attempt < 2) {
+      await new Promise(resolve => setTimeout(resolve, 700));
     }
   }
 
   if (!vData) {
-    throw lastError || new Error("Gagal mengambil data video TikTok.");
+    throw lastError || new Error("Video TikTok tidak bisa diakses.");
   }
 
-  const authorUniqueId = vData.author?.unique_id || "";
-  const authorNickname = vData.author?.nickname || "";
-  const authorAvatar = vData.author?.avatar || "";
+  const author = vData.author || {};
+  const authorId = author.unique_id || "";
   const videoId = String(vData.id || "");
 
-  const canonicalVideoUrl =
-    authorUniqueId && videoId
-      ? `https://www.tiktok.com/@${authorUniqueId}/video/${videoId}`
+  const canonicalUrl =
+    authorId && videoId
+      ? `https://www.tiktok.com/@${authorId}/video/${videoId}`
       : cleanUrl;
 
-  // Menyimpan semua teks yang akan diperiksa oleh ekstraktor preset.
   const scanItems = [];
+  const seenComments = new Set();
+  const seenReplies = new Set();
+  const seenCursors = new Set();
+
+  let commentCount = 0;
+  let replyCount = 0;
+  let commentPages = 0;
+  let incomplete = false;
 
   if (vData.title) {
     scanItems.push({
@@ -360,72 +333,114 @@ async function scrapeTikTok(url) {
     });
   }
 
-  // 2. Ambil beberapa halaman komentar menggunakan cursor.
-  let cursor = 0;
-  const seenCursors = new Set();
-  const commentsMap = new Map();
+  function getCommentText(item) {
+    const value = item?.text ?? item?.content ?? item?.comment ?? "";
+    return typeof value === "string" ? value.trim() : "";
+  }
 
-  for (let page = 0; page < 3; page++) {
+  function getUserId(item) {
+    const user = item?.user || item?.author || item?.user_info || {};
+    return (
+      user.unique_id ||
+      user.uniqueId ||
+      user.unique_id_str ||
+      ""
+    );
+  }
+
+  function addComment(item, sourceType = "comment") {
+    const text = getCommentText(item);
+    if (!text) return false;
+
+    const id = String(
+      item?.cid || item?.comment_id || item?.id || ""
+    );
+    const userId = getUserId(item);
+    const key = id || `${userId}:${text}`;
+
+    const seen = sourceType === "reply" ? seenReplies : seenComments;
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+
+    scanItems.push({
+  text,
+  pinned: Boolean(
+    item?.is_pinned ||
+    item?.pinned ||
+    item?.stick_position
+  ),
+  byAuthor: Boolean(authorId && userId === authorId),
+  sourceType,
+  commentId: String(
+    item?.cid || item?.comment_id || item?.id || ""
+  ),
+  replyTotal: Number(
+    item?.reply_total || item?.reply_count || 0
+  ),
+});
+
+    if (sourceType === "reply") {
+      replyCount++;
+    } else {
+      commentCount++;
+    }
+
+    return true;
+  }
+
+  async function fetchJson(endpoint, params) {
+    const query = new URLSearchParams(params);
+    const response = await fetch(
+      `https://www.tikwm.com/api/${endpoint}?${query}`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          Accept: "application/json",
+          Referer: "https://www.tikwm.com/",
+        },
+        signal: AbortSignal.timeout(6000),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Layanan komentar merespons HTTP ${response.status}`);
+    }
+
+    const json = await response.json();
+
+    if (json.code !== 0 && json.code !== "0") {
+      throw new Error(json.msg || "Gagal membaca komentar.");
+    }
+
+    return json.data;
+  }
+
+  function getItems(data) {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.comments)) return data.comments;
+    if (Array.isArray(data?.comment_list)) return data.comment_list;
+    if (Array.isArray(data?.comments_list)) return data.comments_list;
+    return [];
+  }
+
+  // Mengambil seluruh halaman komentar yang disediakan API.
+  // Batas pengaman mencegah cursor yang rusak menyebabkan loop selamanya.
+  let cursor = "0";
+
+  for (let page = 0; page < 100; page++) {
     try {
-      const params = new URLSearchParams({
-        url: canonicalVideoUrl,
+      const data = await fetchJson("comment/list", {
+        url: canonicalUrl,
         count: "50",
-        cursor: String(cursor),
+        cursor,
       });
 
-      const res = await fetch(
-        `https://www.tikwm.com/api/comment/list?${params.toString()}`,
-        {
-          headers: {
-            "User-Agent": "Mozilla/5.0",
-            Accept: "application/json",
-            Referer: "https://www.tikwm.com/",
-          },
-          signal: AbortSignal.timeout(3500),
-        }
-      );
-
-      if (!res.ok) break;
-
-      const json = await res.json();
-
-      if (json.code !== 0 && json.code !== "0") break;
-
-      const data = json.data;
-      const comments = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.comments)
-          ? data.comments
-          : [];
+      const comments = getItems(data);
+      commentPages++;
 
       for (const comment of comments) {
-        const id = String(comment?.id || "");
-        const text = comment?.text || comment?.content || "";
-
-        if (typeof text !== "string" || !text.trim()) continue;
-
-        const user =
-          comment?.user || comment?.author || comment?.user_info || {};
-
-        const userId =
-          user?.unique_id || user?.uniqueId || user?.unique_id_str || "";
-
-        commentsMap.set(id || `${userId}:${text}`, {
-          id,
-          text,
-          userId,
-          pinned: Boolean(
-            comment?.is_pinned ||
-            comment?.pinned ||
-            comment?.stick_position
-          ),
-          byAuthor: Boolean(
-            authorUniqueId && userId === authorUniqueId
-          ),
-          replyTotal: Number(
-            comment?.reply_total || comment?.reply_count || 0
-          ),
-        });
+        addComment(comment, "comment");
       }
 
       const hasMore = Boolean(data?.hasMore ?? data?.has_more);
@@ -434,105 +449,86 @@ async function scrapeTikTok(url) {
       if (
         !hasMore ||
         nextCursor == null ||
+        String(nextCursor) === cursor ||
         seenCursors.has(String(nextCursor))
       ) {
         break;
       }
 
       seenCursors.add(String(nextCursor));
-      cursor = nextCursor;
-    } catch {
-      // Tetap gunakan komentar yang berhasil diambil sebelumnya.
+      cursor = String(nextCursor);
+    } catch (error) {
+      incomplete = true;
+      lastError = error;
       break;
     }
   }
 
-  const comments = Array.from(commentsMap.values());
+  // Kumpulkan komentar yang mempunyai balasan.
+  // Balasan juga dipaginasi sampai tidak ada halaman berikutnya.
+  const replyTargets = Array.from(seenComments)
+    .map(key => key)
+    .map(key => {
+      // scanItems menyimpan teks, jadi cari ID dari komentar asli
+      // pada daftar yang dikumpulkan selama pemindaian.
+      return key;
+    });
 
-  // 3. Ambil balasan komentar dari beberapa komentar yang punya replies.
-  // Dibatasi agar waktu eksekusi server tidak berlebihan.
-  const replyTargets = comments
-    .filter((comment) => comment.id && comment.replyTotal > 0)
-    .slice(0, 6);
+  // Ambil ulang halaman komentar yang sudah tersimpan untuk
+  // memperoleh ID dan jumlah balasan yang diperlukan endpoint reply.
+  // ID komentar harus tersedia dari respons API.
+  const replyJobs = [];
 
-  const replyResults = await Promise.all(
-    replyTargets.map(async (comment) => {
+  // Ambil target balasan dari daftar komentar yang berhasil diproses.
+  // Data ID disimpan terpisah supaya balasan tidak bergantung pada teks.
+  // Jika API tidak mengembalikan ID, komentar tetap dipindai.
+  //
+  // Target ID dikumpulkan pada pemindaian komentar di bawah melalui
+  // properti sementara yang diisi pada setiap item.
+  const targets = scanItems
+    .filter(item => item.sourceType === "comment" && item.commentId)
+    .filter(item => Number(item.replyTotal || 0) > 0)
+    .slice(0, 200);
+
+  for (const target of targets) {
+    let replyCursor = "0";
+    const replyCursors = new Set();
+
+    for (let page = 0; page < 100; page++) {
       try {
-        const params = new URLSearchParams({
-          comment_id: comment.id,
+        const data = await fetchJson("comment/reply", {
+          comment_id: String(target.commentId),
           count: "50",
-          cursor: "0",
+          cursor: replyCursor,
         });
 
-        const res = await fetch(
-          `https://www.tikwm.com/api/comment/reply?${params.toString()}`,
-          {
-            headers: {
-              "User-Agent": "Mozilla/5.0",
-              Accept: "application/json",
-              Referer: "https://www.tikwm.com/",
-            },
-            signal: AbortSignal.timeout(3500),
-          }
-        );
+        const replies = getItems(data);
 
-        if (!res.ok) return [];
+        for (const reply of replies) {
+          addComment(reply, "reply");
+        }
 
-        const json = await res.json();
+        const hasMore = Boolean(data?.hasMore ?? data?.has_more);
+        const nextCursor = data?.cursor;
 
-        if (json.code !== 0 && json.code !== "0") return [];
+        if (
+          !hasMore ||
+          nextCursor == null ||
+          String(nextCursor) === replyCursor ||
+          replyCursors.has(String(nextCursor))
+        ) {
+          break;
+        }
 
-        const data = json.data;
-        const replies = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.comments)
-            ? data.comments
-            : [];
-
-        return replies
-          .filter(
-            (reply) =>
-              typeof (reply?.text || reply?.content) === "string"
-          )
-          .map((reply) => {
-            const user =
-              reply?.user || reply?.author || reply?.user_info || {};
-
-            const userId =
-              user?.unique_id ||
-              user?.uniqueId ||
-              user?.unique_id_str ||
-              "";
-
-            return {
-              text: reply.text || reply.content,
-              pinned: false,
-              byAuthor: Boolean(
-                authorUniqueId && userId === authorUniqueId
-              ),
-              sourceType: "reply",
-            };
-          });
+        replyCursors.add(String(nextCursor));
+        replyCursor = String(nextCursor);
       } catch {
-        return [];
+        incomplete = true;
+        break;
       }
-    })
-  );
-
-  for (const comment of comments) {
-    scanItems.push({
-      text: comment.text,
-      pinned: comment.pinned,
-      byAuthor: comment.byAuthor,
-      sourceType: "comment",
-    });
+    }
   }
 
-  for (const replies of replyResults) {
-    scanItems.push(...replies);
-  }
-
-  // 4. Ekstrak dan deduplikasi link preset.
   const { presetLinks, otherLinks } =
     await extractPresetsFromScanItems(scanItems);
 
@@ -546,19 +542,11 @@ async function scrapeTikTok(url) {
       found,
       totalPresets: presetLinks.length,
       platform: "tiktok",
-      author: authorUniqueId ? `@${authorUniqueId}` : authorNickname,
-      authorDetail: {
-        uniqueId: authorUniqueId,
-        nickname: authorNickname,
-        avatar: authorAvatar,
-        profileUrl: authorUniqueId
-          ? `https://www.tiktok.com/@${authorUniqueId}`
-          : "",
-      },
-      videoUrl: canonicalVideoUrl,
+      author: authorId ? `@${authorId}` : (author.nickname || ""),
+      videoUrl: canonicalUrl,
       video: {
         id: videoId,
-        url: canonicalVideoUrl,
+        url: canonicalUrl,
         title: vData.title || "",
         cover: vData.cover || vData.origin_cover || "",
         duration: Number(vData.duration || 0),
@@ -569,13 +557,19 @@ async function scrapeTikTok(url) {
           shares: Number(vData.share_count || 0),
         },
       },
+      scan: {
+        comments: commentCount,
+        replies: replyCount,
+        commentPages,
+        incomplete,
+      },
       presetLinks,
+      otherLinks: otherLinks.length ? otherLinks : undefined,
       message: found
-        ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion.`
-        : comments.length === 0
-          ? "Komentar tidak berhasil diakses. Coba lagi nanti atau periksa apakah video dapat diakses publik."
-          : `Sudah memeriksa ${comments.length} komentar dan ${replyResults.reduce((sum, replies) => sum + replies.length, 0)} balasan, tetapi tidak menemukan link preset yang dikenali.`,
-      otherLinks: otherLinks.length > 0 ? otherLinks : undefined,
+        ? `Ditemukan ${presetLinks.length} preset dari ${commentCount} komentar dan ${replyCount} balasan.`
+        : incomplete
+          ? `Pemindaian belum lengkap: ${commentCount} komentar dan ${replyCount} balasan berhasil diperiksa. Layanan komentar membatasi atau gagal merespons.`
+          : `Sudah memeriksa ${commentCount} komentar dan ${replyCount} balasan, tetapi belum menemukan link preset yang dikenali.`,
     },
   };
 }
