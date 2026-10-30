@@ -1,17 +1,39 @@
-const URL_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:alight\.link|alightcreative\.com|alightmotion\.com|drive\.google\.com|drive\.usercontent\.google\.com|mediafire\.com|sfile\.mobi|mega\.nz|dropbox\.com|1drv\.ms|onedrive\.live\.com|pixeldrain\.com|gofile\.io|catbox\.moe|we\.tl|s\.id|bit\.ly|tinyurl\.com|cutt\.ly|t\.co|rb\.gy|linktr\.ee|heylink\.me|beacons\.ai|taplink\.cc|snipfeed\.co|(?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s"'<>]+)/gi;
+// Match complete URL tokens, not just a recognized hostname. Keep Markdown
+// link labels and hrefs separate by excluding square/round brackets from tokens.
+const URL_REGEX = /(?:https?:\/\/|www\.)[^\s<>"'`()[\]{}]+|(?<![\w@])(?:alight\.link|alightcreative\.com|alightmotion\.com|drive\.google\.com|drive\.usercontent\.google\.com|mediafire\.com|sfile\.mobi|mega\.nz|dropbox\.com|1drv\.ms|onedrive\.live\.com|pixeldrain\.com|gofile\.io|catbox\.moe|we\.tl|s\.id|bit\.ly|tinyurl\.com|cutt\.ly|t\.co|rb\.gy|linktr\.ee|heylink\.me|beacons\.ai|taplink\.cc|snipfeed\.co)(?:\/[^\s<>"'`()[\]{}]*)?/gi;
 const PRESET_5MB_REGEX = /alight\.link|alightcreative\.com|alightmotion\.com/i;
 const PRESET_XML_REGEX = /drive\.google\.com|drive\.usercontent\.google\.com|mediafire\.com|sfile\.mobi|mega\.nz|dropbox\.com|1drv\.ms|onedrive\.live\.com|pixeldrain\.com|gofile\.io|catbox\.moe|we\.tl|\.xml(?:[?#]|$)/i;
 const SHORTLINK_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:s\.id|bit\.ly|tinyurl\.com|cutt\.ly|t\.co|rb\.gy|linktr\.ee|heylink\.me|beacons\.ai|taplink\.cc|snipfeed\.co)\//i;
 
 function cleanExtractedUrl(value) {
-  return String(value || "").replace(/[.,!?;:]+$/g, "").replace(/[)\]}]+$/g, "");
+  return String(value || "")
+    .trim()
+    .replace(/[.,!?;:]+$/g, "")
+    .replace(/[)\]}]+$/g, "")
+    .replace(/[.,!?;:]+$/g, "");
 }
 
 function normalizeFoundUrls(text) {
-  const matches = String(text || "").match(URL_REGEX) || [];
-  return [...new Set(matches.map(cleanExtractedUrl).filter(Boolean).map(value =>
-    /^https?:\/\//i.test(value) ? value : `https://${value}`
-  ))];
+  const source = String(text || "").replace(/[\u200B-\u200D\uFEFF]/g, "");
+  const matches = source.match(URL_REGEX) || [];
+  const normalized = [];
+
+  for (const match of matches) {
+    let value = cleanExtractedUrl(match);
+    if (!value) continue;
+    if (/^www\./i.test(value) || !/^https?:\/\//i.test(value)) {
+      value = `https://${value}`;
+    }
+
+    try {
+      const parsed = new URL(value);
+      if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.hostname.includes(".")) {
+        normalized.push(parsed.toString());
+      }
+    } catch {}
+  }
+
+  return [...new Set(normalized)];
 }
 
 function parseMetaFromText(text) {
