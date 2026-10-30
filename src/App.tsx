@@ -13,6 +13,10 @@ import Marketplace from './pages/Marketplace';
 import AMFinder from './pages/AMFinder';
 import Downloader from './pages/Downloader';
 import Placeholder from './pages/Placeholder';
+import AnimeHome from './pages/anime/AnimeHome';
+import AnimeSearch from './pages/anime/AnimeSearch';
+import AnimeDetail from './pages/anime/AnimeDetail';
+import AnimeWatch from './pages/anime/AnimeWatch';
 import './index.css';
 
 export default function App() {
@@ -41,6 +45,11 @@ export default function App() {
         <Route path="/rooms" element={<Rooms />} />
         <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/admin" element={<Admin />} />
+        
+        <Route path="/anime" element={<AnimeHome />} />
+        <Route path="/anime/search" element={<AnimeSearch />} />
+        <Route path="/anime/:slug" element={<AnimeDetail />} />
+        <Route path="/anime/watch/:slug/:episode" element={<AnimeWatch />} />
 
         <Route
           path="*"
