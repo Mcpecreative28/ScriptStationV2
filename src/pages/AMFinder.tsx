@@ -1,6 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import {
-  ArrowLeft,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -13,13 +12,11 @@ import {
   Link2,
   LoaderCircle,
   LockKeyhole,
-  Radio,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import Shell from '../components/Shell';
 
 type Preset = {
@@ -253,7 +250,6 @@ export default function AMFinder() {
   const [result, setResult] = useState<FinderResult | null>(null);
   const [copied, setCopied] = useState('');
 
-  // Simulasi tahapan progresif yang sinkron selama pemindaian backend berlangsung
   useEffect(() => {
     if (!loading) {
       setActivePhase(0);
@@ -370,7 +366,7 @@ export default function AMFinder() {
 
   return (
     <Shell>
-      <main className="relative min-h-[100dvh] overflow-hidden bg-[#040a06] px-4 pb-24 pt-6 text-[#ecfff2] selection:bg-[#38f878]/30 selection:text-[#d8ffe4] sm:px-6 sm:pt-10">
+      <main className="relative min-h-[100dvh] overflow-hidden bg-[#040a06] px-4 pb-24 pt-24 text-[#ecfff2] selection:bg-[#38f878]/30 selection:text-[#d8ffe4] sm:px-6 sm:pt-28">
         {/* Atmosfer Latar Hijau Gelap & Terang Berlapis */}
         <div
           aria-hidden="true"
@@ -383,24 +379,8 @@ export default function AMFinder() {
         </div>
 
         <div className="relative mx-auto max-w-5xl">
-          {/* Navigasi Atas */}
-          <div className="flex items-center justify-between gap-4">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 rounded-full border border-[#8effb2]/20 bg-[#0b1f12]/65 px-4 py-2 text-xs font-medium text-[#c5f7d4]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-2xl transition hover:border-[#6bff9b]/45 hover:bg-[#112d1b]/80 hover:text-white active:scale-[0.98]"
-            >
-              <ArrowLeft size={15} />
-              Kembali ke Beranda
-            </Link>
-
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#5eff93]/20 bg-[#091c10]/70 px-3.5 py-1.5 text-[11px] font-medium text-[#9effbe] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur-xl">
-              <Radio size={13} className="text-[#44ff82]" />
-              Deep Progressive Scanner
-            </div>
-          </div>
-
-          {/* Hero Section — Split Asymmetric di Desktop, Padat di Mobile */}
-          <section className="mt-8 grid grid-cols-1 items-center gap-6 lg:mt-12 lg:grid-cols-12 lg:gap-8">
+          {/* Hero Section — Langsung fokus ke Emblem Lensa AM Finder tanpa tombol atas yang menghalangi Navbar */}
+          <section className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12 lg:gap-8">
             <div className="flex flex-col items-center text-center lg:col-span-5 lg:items-start lg:text-left">
               <AmFinderLensEmblem active={loading} />
 
@@ -474,7 +454,7 @@ export default function AMFinder() {
                       type="url"
                       value={url}
                       onChange={(event) => setUrl(event.target.value)}
-                      placeholder="https://vt.tiktok.com/ZSgH7GnJ1/"
+                      placeholder="https://vt.tiktok.com/... atau https://www.instagram.com/reel/..."
                       autoComplete="url"
                       className="min-h-[54px] w-full rounded-2xl border border-[#8effb2]/25 bg-[#040d07]/80 py-3.5 pl-11 pr-4 text-sm text-white shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)] outline-none transition placeholder:text-[#86b895]/45 focus:border-[#4dff88]/70 focus:bg-[#06130a]/95 focus:ring-4 focus:ring-[#39ff78]/15"
                     />
