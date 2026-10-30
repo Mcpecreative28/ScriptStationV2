@@ -307,7 +307,26 @@ export default function AMFinder() {
         },
       );
 
-      const json = (await response.json()) as ApiResponse;
+      // Baca sebagai teks terlebih dahulu agar tidak pernah crash dengan "Unexpected end of JSON input"
+      const rawText = await response.text();
+      if (!rawText || !rawText.trim()) {
+        throw new Error(
+          response.status === 504
+            ? 'Waktu pemindaian habis di server (Timeout). Silakan coba klik analisis sekali lagi.'
+            : `Server mengembalikan respons kosong (HTTP ${response.status}).`,
+        );
+      }
+
+      let json: ApiResponse;
+      try {
+        json = JSON.parse(rawText) as ApiResponse;
+      } catch {
+        throw new Error(
+          response.status === 504
+            ? 'Server membutuhkan waktu terlalu lama untuk memindai komentar video ini. Coba ulangi sekali lagi.'
+            : `Respons server tidak dapat dibaca (HTTP ${response.status}).`,
+        );
+      }
 
       if (!response.ok || json.success === false || json.status === false) {
         throw new Error(
