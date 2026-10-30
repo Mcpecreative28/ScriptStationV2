@@ -1,3 +1,8 @@
+export const maxDuration = 60;
+export const config = {
+  maxDuration: 60,
+};
+
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -15,6 +20,19 @@ const { findAmPresets } = require('./amfinder-preset-scraper.cjs') as {
       authorDetail?: Record<string, unknown>;
       videoUrl?: string;
       video?: Record<string, unknown>;
+      scan?: {
+        comments?: number;
+        replies?: number;
+        commentPages?: number;
+        incomplete?: boolean;
+        requiresApiKey?: boolean;
+        error?: string;
+        stages?: Array<{
+          stage: string;
+          status: 'done' | 'partial' | 'error';
+          detail: string;
+        }>;
+      };
       presetLinks: Array<{
         type?: string;
         title?: string;
@@ -42,6 +60,7 @@ const ALLOWED_HOSTS = [
   'youtube.com',
   'instagram.com',
   'instagr.am',
+  'ig.me',
   'facebook.com',
   'fb.watch',
   'fb.com',
@@ -52,9 +71,19 @@ const ALLOWED_HOSTS = [
   'capcut.com',
   'alight.link',
   'alightcreative.com',
+  'alightmotion.com',
   'drive.google.com',
+  'drive.usercontent.google.com',
   'mediafire.com',
   'sfile.mobi',
+  'mega.nz',
+  'dropbox.com',
+  '1drv.ms',
+  'onedrive.live.com',
+  'pixeldrain.com',
+  'gofile.io',
+  'catbox.moe',
+  'we.tl',
   's.id',
   'bit.ly',
   'tinyurl.com',
@@ -160,14 +189,13 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    
     // Domain link tujuan preset tidak harus sama dengan domain input.
     // Tetap validasi protokol dan tolak alamat lokal.
     const presetLinks = Array.isArray(result.presetLinks)
       ? result.presetLinks.filter((preset) => {
           if (
             !preset ||
-            typeof preset.url !== "string" ||
+            typeof preset.url !== 'string' ||
             preset.url.length > 4096
           ) {
             return false;
@@ -175,23 +203,20 @@ export default async function handler(req: any, res: any) {
 
           try {
             const parsed = new URL(preset.url);
-            const host = parsed.hostname
-              .toLowerCase()
-              .replace(/^www\./, "");
+            const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
 
             const privateHost =
-              host === "localhost" ||
-              host.endsWith(".localhost") ||
-              host.endsWith(".local") ||
-              host === "127.0.0.1" ||
-              host === "::1" ||
-              host.startsWith("10.") ||
-              host.startsWith("192.168.") ||
+              host === 'localhost' ||
+              host.endsWith('.localhost') ||
+              host.endsWith('.local') ||
+              host === '127.0.0.1' ||
+              host === '::1' ||
+              host.startsWith('10.') ||
+              host.startsWith('192.168.') ||
               /^172\.(1[6-9]|2\d|3[01])\./.test(host);
 
             return (
-              (parsed.protocol === "https:" ||
-                parsed.protocol === "http:") &&
+              (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
               !privateHost &&
               !parsed.username &&
               !parsed.password

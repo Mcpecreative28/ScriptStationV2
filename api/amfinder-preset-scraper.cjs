@@ -8,6 +8,22 @@ const PRESET_HINT_REGEX = /\b(preset|xml|5mb|alight|am|link|pw|pass|password|san
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Safe JSON Parser: Mencegah error "Unexpected end of JSON input"
+ * ketika API eksternal mengembalikan body kosong atau HTML error.
+ */
+async function safeReadJson(response) {
+  const rawText = await response.text();
+  if (!rawText || !rawText.trim()) {
+    throw new Error(`Respons kosong dari server (HTTP ${response.status}).`);
+  }
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    throw new Error(`Format respons bukan JSON valid (HTTP ${response.status}).`);
+  }
+}
+
 function cleanExtractedUrl(value) {
   return String(value || "")
     .trim()
@@ -46,6 +62,11 @@ function normalizeFoundUrls(text) {
   return [...new Set(normalized)];
 }
 
+function hasDirectPresetUrl(text) {
+  const urls = normalizeFoundUrls(text);
+  return urls.some((u) => PRESET_5MB_REGEX.test(u) || PRESET_XML_REGEX.test(u));
+}
+
 function parseMetaFromText(text) {
   const source = String(text || "");
   const ratioMatch = source.match(/\b(9:16|16:9|1:1|4:5|3:4|4:3)\b/i);
@@ -75,7 +96,7 @@ async function resolveUrlAndExtract(rawUrl, maxDepth = 2) {
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
-        signal: AbortSignal.timeout(5500),
+        signal: AbortSignal.timeout(2500),
       });
 
       currentUrl = res.url || currentUrl;
@@ -151,7 +172,7 @@ async function runWithConcurrency(items, concurrency, worker) {
   await Promise.all(runners);
 }
 
-async function extractPresetsFromScanItems(scanItems) {
+async function extractPresetsFromScanItems(scanItems, deadlineMs = Infinity) {
   const presetsMap = new Map();
   const otherLinksMap = new Map();
 
@@ -167,7 +188,7 @@ async function extractPresetsFromScanItems(scanItems) {
     }
   }
 
-  await runWithConcurrency(scanItems, 6, async (item) => {
+  await runWithConcurrency(scanItems, 8, async (item) => {
     const urlsInText = normalizeFoundUrls(item.text);
     if (urlsInText.length === 0) return;
 
@@ -215,7 +236,7 @@ async function extractPresetsFromScanItems(scanItems) {
         continue;
       }
 
-      if (SHORTLINK_REGEX.test(rawUrl) || rawUrl.includes("alight")) {
+      if ((SHORTLINK_REGEX.test(rawUrl) || rawUrl.includes("alight")) && Date.now() < deadlineMs) {
         const { resolvedUrl, nestedPresets } = await resolveUrlAndExtract(rawUrl);
 
         if (PRESET_5MB_REGEX.test(resolvedUrl)) {
@@ -301,6 +322,7 @@ async function extractPresetsFromScanItems(scanItems) {
 }
 
 async function scrapeYouTube(url) {
+  const startTime = Date.now();
   const videoId = extractYouTubeId(url);
   if (!videoId) throw new Error("Invalid YouTube video ID or URL.");
 
@@ -319,11 +341,11 @@ async function scrapeYouTube(url) {
         },
         videoId,
       }),
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(4500),
     });
 
     if (playerRes.ok) {
-      const data = await playerRes.json();
+      const data = await safeReadJson(playerRes);
       const details = data?.videoDetails || {};
       videoTitle = details.title || "";
       author = details.author || "";
@@ -348,7 +370,8 @@ async function scrapeYouTube(url) {
     let pageToken = "";
     const seenTokens = new Set();
     try {
-      for (let page = 0; page < 200; page++) {
+      for (let page = 0; page < 15; page++) {
+        if (Date.now() - startTime > 6800) break;
         const params = new URLSearchParams({
           part: "snippet,replies",
           videoId,
@@ -359,9 +382,9 @@ async function scrapeYouTube(url) {
         if (pageToken) params.set("pageToken", pageToken);
         const response = await fetch(
           `https://www.googleapis.com/youtube/v3/commentThreads?${params}`,
-          { signal: AbortSignal.timeout(10000) }
+          { signal: AbortSignal.timeout(4500) }
         );
-        const payload = await response.json();
+        const payload = await safeReadJson(response);
         if (!response.ok) throw new Error(payload?.error?.message || "YouTube comments API gagal.");
 
         for (const thread of payload.items || []) {
@@ -372,45 +395,12 @@ async function scrapeYouTube(url) {
             youtubeCommentsScanned++;
           }
 
-          const totalReplies = Number(thread?.snippet?.totalReplyCount || 0);
           const embedded = thread?.replies?.comments || [];
           for (const reply of embedded) {
             const replyText = reply?.snippet?.textDisplay || reply?.snippet?.textOriginal || "";
             if (replyText) {
               scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
               youtubeRepliesScanned++;
-            }
-          }
-
-          if (top?.id && totalReplies > embedded.length) {
-            let replyToken = "";
-            const replyTokens = new Set();
-            for (let rp = 0; rp < 100; rp++) {
-              const rpParams = new URLSearchParams({
-                part: "snippet",
-                parentId: top.id,
-                maxResults: "100",
-                textFormat: "plainText",
-                key: youtubeKey,
-              });
-              if (replyToken) rpParams.set("pageToken", replyToken);
-              const rpResponse = await fetch(
-                `https://www.googleapis.com/youtube/v3/comments?${rpParams}`,
-                { signal: AbortSignal.timeout(10000) }
-              );
-              const rpPayload = await rpResponse.json();
-              if (!rpResponse.ok) throw new Error(rpPayload?.error?.message || "Gagal mengambil balasan YouTube.");
-              for (const reply of rpPayload.items || []) {
-                const replyText = reply?.snippet?.textDisplay || reply?.snippet?.textOriginal || "";
-                if (replyText) {
-                  scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
-                  youtubeRepliesScanned++;
-                }
-              }
-              const nextReplyToken = rpPayload.nextPageToken;
-              if (!nextReplyToken || replyTokens.has(nextReplyToken)) break;
-              replyTokens.add(nextReplyToken);
-              replyToken = nextReplyToken;
             }
           }
         }
@@ -428,7 +418,7 @@ async function scrapeYouTube(url) {
     }
   }
 
-  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
+  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems, startTime + 8800);
   const found = presetLinks.length > 0;
   return {
     status: true,
@@ -472,12 +462,18 @@ async function scrapeYouTube(url) {
 }
 
 async function scrapeTikTok(url) {
+  const startTime = Date.now();
+  // Time budget ketat agar fungsi selalu selesai sebelum batas 10 detik Vercel Hobby
+  const COMMENT_BUDGET_MS = 4800;
+  const REPLY_BUDGET_MS = 7400;
+  const RESOLVE_DEADLINE_MS = startTime + 9000;
+
   const cleanUrl = url.trim();
   let vData = null;
   let lastError = null;
   const stages = [];
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch("https://www.tikwm.com/api/", {
         method: "POST",
@@ -487,10 +483,10 @@ async function scrapeTikTok(url) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         },
         body: new URLSearchParams({ url: cleanUrl }).toString(),
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(4500),
       });
 
-      const json = await response.json();
+      const json = await safeReadJson(response);
 
       if ((json.code === 0 || json.code === "0") && json.data) {
         vData = json.data;
@@ -502,8 +498,8 @@ async function scrapeTikTok(url) {
       lastError = error;
     }
 
-    if (attempt < 2) {
-      await sleep(750 * (attempt + 1));
+    if (attempt < 1) {
+      await sleep(350);
     }
   }
 
@@ -536,6 +532,7 @@ async function scrapeTikTok(url) {
   let commentPages = 0;
   let incomplete = false;
   let commentError = "";
+  let foundDirectAuthorPreset = false;
 
   if (vData.title) {
     scanItems.push({
@@ -544,6 +541,9 @@ async function scrapeTikTok(url) {
       byAuthor: true,
       sourceType: "description",
     });
+    if (hasDirectPresetUrl(vData.title)) {
+      foundDirectAuthorPreset = true;
+    }
   }
 
   function getCommentText(item) {
@@ -574,6 +574,10 @@ async function scrapeTikTok(url) {
       (author.id && item?.user?.id && String(author.id) === String(item.user.id))
     );
 
+    if ((isByAuthor || isPinned) && hasDirectPresetUrl(text)) {
+      foundDirectAuthorPreset = true;
+    }
+
     scanItems.push({
       text,
       pinned: isPinned,
@@ -601,7 +605,7 @@ async function scrapeTikTok(url) {
     return true;
   }
 
-  async function fetchJsonWithRetry(endpoint, params, maxRetries = 3) {
+  async function fetchJsonWithRetry(endpoint, params, maxRetries = 2) {
     let attemptError = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
@@ -613,23 +617,19 @@ async function scrapeTikTok(url) {
             Accept: "application/json",
             Referer: "https://www.tikwm.com/",
           },
-          signal: AbortSignal.timeout(7000),
+          signal: AbortSignal.timeout(3200),
         });
 
         if (response.status === 429 || response.status >= 500) {
           throw new Error(`HTTP ${response.status}`);
         }
 
-        if (!response.ok) {
-          throw new Error(`Layanan komentar merespons HTTP ${response.status}`);
-        }
-
-        const json = await response.json();
+        const json = await safeReadJson(response);
 
         if (json.code !== 0 && json.code !== "0") {
           const msg = String(json.msg || "Gagal membaca komentar.");
           if (/limit|fast|busy|try again|later/i.test(msg) && attempt + 1 < maxRetries) {
-            await sleep(900 * (attempt + 1));
+            await sleep(400);
             continue;
           }
           throw new Error(msg);
@@ -639,7 +639,7 @@ async function scrapeTikTok(url) {
       } catch (err) {
         attemptError = err;
         if (attempt + 1 < maxRetries) {
-          await sleep(650 * (attempt + 1));
+          await sleep(300);
         }
       }
     }
@@ -673,12 +673,11 @@ async function scrapeTikTok(url) {
     return saysMore || Boolean(nextCursor);
   }
 
+  // Tahap 2: Paginasi Cepat Komentar Utama (Sesuai Time Budget Serverless)
   let cursor = "0";
-  const startTime = Date.now();
-  const MAX_SCAN_DURATION_MS = 22000;
 
-  for (let page = 0; page < 120; page++) {
-    if (Date.now() - startTime > MAX_SCAN_DURATION_MS) break;
+  for (let page = 0; page < 15; page++) {
+    if (Date.now() - startTime > COMMENT_BUDGET_MS) break;
 
     try {
       const commentParams = {
@@ -688,7 +687,7 @@ async function scrapeTikTok(url) {
       };
       if (videoId) commentParams.video_id = videoId;
 
-      const data = await fetchJsonWithRetry("comment/list", commentParams);
+      const data = await fetchJsonWithRetry("comment/list", commentParams, 2);
       const comments = getItems(data);
       commentPages++;
 
@@ -702,6 +701,11 @@ async function scrapeTikTok(url) {
         for (const reply of embeddedReplies) addComment(reply, "reply");
       }
 
+      // Jika sudah menemukan preset langsung dari Author/Pinned di halaman awal, hemat waktu untuk ekstraksi
+      if (foundDirectAuthorPreset && page >= 1) {
+        break;
+      }
+
       const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor ?? data?.data?.cursor;
 
       if (!hasMorePages(data, cursor, nextCursor) || seenCursors.has(String(nextCursor))) {
@@ -710,39 +714,50 @@ async function scrapeTikTok(url) {
 
       seenCursors.add(String(nextCursor));
       cursor = String(nextCursor);
-      await sleep(180);
     } catch (error) {
-      incomplete = true;
-      lastError = error;
-      commentError = error instanceof Error ? error.message : String(error);
+      if (commentCount === 0) {
+        incomplete = true;
+        lastError = error;
+        commentError = error instanceof Error ? error.message : String(error);
+      }
       break;
     }
   }
 
   stages.push({
     stage: "comments",
-    status: incomplete ? "partial" : "done",
+    status: incomplete && commentCount === 0 ? "partial" : "done",
     detail: `${commentCount} komentar utama dari ${commentPages} halaman berhasil dianalisis`,
   });
 
+  // Tahap 3: Pemindaian Paralel Sub-Balasan (Concurrency = 4 agar super cepat & anti-timeout)
   const targets = scanItems
     .filter((item) => item.sourceType === "comment" && item.commentId && Number(item.replyTotal || 0) > 0)
     .sort((a, b) => {
-      const priorityA = (a.byAuthor ? 100 : 0) + (a.pinned ? 50 : 0) + (PRESET_HINT_REGEX.test(a.text) ? 25 : 0) + Math.min(a.replyTotal, 20);
-      const priorityB = (b.byAuthor ? 100 : 0) + (b.pinned ? 50 : 0) + (PRESET_HINT_REGEX.test(b.text) ? 25 : 0) + Math.min(b.replyTotal, 20);
+      const priorityA =
+        (a.byAuthor ? 100 : 0) +
+        (a.pinned ? 50 : 0) +
+        (PRESET_HINT_REGEX.test(a.text) ? 25 : 0) +
+        Math.min(a.replyTotal, 20);
+      const priorityB =
+        (b.byAuthor ? 100 : 0) +
+        (b.pinned ? 50 : 0) +
+        (PRESET_HINT_REGEX.test(b.text) ? 25 : 0) +
+        Math.min(b.replyTotal, 20);
       return priorityB - priorityA;
-    });
+    })
+    .slice(0, 12); // Fokus pada 12 thread diskusi paling relevan
 
   let replyErrorsCount = 0;
 
-  for (const target of targets) {
-    if (Date.now() - startTime > MAX_SCAN_DURATION_MS) break;
+  await runWithConcurrency(targets, 4, async (target) => {
+    if (Date.now() - startTime > REPLY_BUDGET_MS) return;
 
     let replyCursor = "0";
     const replyCursors = new Set();
 
-    for (let page = 0; page < 50; page++) {
-      if (Date.now() - startTime > MAX_SCAN_DURATION_MS) break;
+    for (let page = 0; page < 3; page++) {
+      if (Date.now() - startTime > REPLY_BUDGET_MS) break;
 
       try {
         const replyParams = {
@@ -753,7 +768,7 @@ async function scrapeTikTok(url) {
           cursor: replyCursor,
         };
 
-        const data = await fetchJsonWithRetry("comment/reply", replyParams, 2);
+        const data = await fetchJsonWithRetry("comment/reply", replyParams, 1);
         const replies = getItems(data);
 
         for (const reply of replies) {
@@ -768,26 +783,24 @@ async function scrapeTikTok(url) {
 
         replyCursors.add(String(nextCursor));
         replyCursor = String(nextCursor);
-        await sleep(160);
       } catch (error) {
         replyErrorsCount++;
         const errMsg = error instanceof Error ? error.message : String(error);
         if (replyCount === 0 && replyErrorsCount >= targets.length) {
-          incomplete = true;
           if (!commentError) commentError = errMsg;
         }
         break;
       }
     }
-  }
+  });
 
   stages.push({
     stage: "replies",
-    status: incomplete && replyCount === 0 ? "partial" : "done",
-    detail: `${replyCount} sub-balasan dari ${targets.length} diskusi terindikasi diperiksa`,
+    status: "done",
+    detail: `${replyCount} sub-balasan dari ${targets.length} diskusi prioritas diperiksa`,
   });
 
-  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
+  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems, RESOLVE_DEADLINE_MS);
   const found = presetLinks.length > 0;
 
   stages.push({
@@ -838,9 +851,6 @@ async function scrapeTikTok(url) {
   };
 }
 
-/**
- * Konversi Shortcode Instagram ke Media ID Numerik (Base64 Instagram Alphabet)
- */
 function instagramShortcodeToMediaId(shortcode) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let mediaId = 0n;
@@ -866,17 +876,14 @@ function decodeHtmlEntities(str) {
     .replace(/\\n/g, "\n");
 }
 
-/**
- * 5-Stage Progressive Instagram Scraper (Reels, Post, Share URL, Embed, GraphQL & Mobile API)
- */
 async function scrapeInstagram(url) {
+  const startTime = Date.now();
   let workingUrl = String(url || "").trim();
   const stages = [];
 
   const userAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-  // Tahap 1: Resolusi URL Share (/share/reel/... atau /share/p/...) jika diperlukan
   let shortcodeMatch = workingUrl.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
   if (!shortcodeMatch || /\/share\//i.test(workingUrl)) {
     try {
@@ -887,7 +894,7 @@ async function scrapeInstagram(url) {
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(4000),
       });
       if (shareRes.url) {
         workingUrl = shareRes.url;
@@ -954,7 +961,6 @@ async function scrapeInstagram(url) {
       "";
     if (dispUrl && !coverUrl) coverUrl = dispUrl;
 
-    // Ekstraksi Caption dari berbagai struktur GraphQL / API v1
     const capText =
       mediaObj?.caption?.text ||
       mediaObj?.edge_media_to_caption?.edges?.[0]?.node?.text ||
@@ -964,11 +970,10 @@ async function scrapeInstagram(url) {
       addIgText(capText, "description", true, true);
     }
 
-    // Ekstraksi Komentar & Sub-Balasan
     const commentContainers = [
       mediaObj?.edge_media_to_parent_comment?.edges,
       mediaObj?.edge_media_to_comment?.edges,
-      mediaObj?. edge_media_preview_comment?.edges,
+      mediaObj?.edge_media_preview_comment?.edges,
       mediaObj?.comments?.edges,
       mediaObj?.comments,
       mediaObj?.preview_comments,
@@ -1004,7 +1009,6 @@ async function scrapeInstagram(url) {
     }
   }
 
-  // Tahap 2: Ambil Token Sesi & LSD dari Halaman Publik + Multi-DocID GraphQL
   let cookieStr = "";
   let csrf = "missing";
   let lsdToken = "AVqbxe3J_YA";
@@ -1015,9 +1019,8 @@ async function scrapeInstagram(url) {
         "User-Agent": userAgent,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
-        "Sec-Fetch-Mode": "navigate",
       },
-      signal: AbortSignal.timeout(9000),
+      signal: AbortSignal.timeout(4000),
     });
 
     const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
@@ -1031,7 +1034,6 @@ async function scrapeInstagram(url) {
       pageHtml.match(/"lsd":"([^"]+)"/);
     if (lsdMatch) lsdToken = lsdMatch[1];
 
-    // Ekstrak Meta OG langsung dari HTML halaman utama jika ada
     const ogDescMatch =
       pageHtml.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i) ||
       pageHtml.match(/<meta\s+name="description"\s+content="([^"]+)"/i);
@@ -1044,14 +1046,13 @@ async function scrapeInstagram(url) {
     }
   } catch {}
 
-  // Daftar doc_id GraphQL Instagram (Post & Reels Web Info + Comments)
   const graphqlDocIds = [
     "8845758582119845",
     "10015901848480474",
-    "27128499623469141",
   ];
 
   for (const docId of graphqlDocIds) {
+    if (Date.now() - startTime > 5500) break;
     try {
       const payload = new URLSearchParams({
         av: "0",
@@ -1093,11 +1094,11 @@ async function scrapeInstagram(url) {
           Referer: `https://www.instagram.com/p/${shortcode}/`,
         },
         body: payload.toString(),
-        signal: AbortSignal.timeout(9000),
+        signal: AbortSignal.timeout(3500),
       });
 
       if (gqlRes.ok) {
-        const json = await gqlRes.json();
+        const json = await safeReadJson(gqlRes);
         const mediaItem =
           json?.data?.xdt_shortcode_media ||
           json?.data?.shortcode_media ||
@@ -1119,127 +1120,71 @@ async function scrapeInstagram(url) {
       : "Beralih ke jalur ekstraksi Embed & Mobile API",
   });
 
-  // Tahap 3: Jalur Embed Captioned (/p/{shortcode}/embed/captioned/)
-  // Sangat ampuh menembus pemblokiran IP server untuk mengambil caption & komentar tersemat
-  try {
-    const embedRes = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
-      headers: {
-        "User-Agent": userAgent,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      signal: AbortSignal.timeout(9000),
-    });
+  // Jalur Embed Captioned
+  if (Date.now() - startTime < 7500) {
+    try {
+      const embedRes = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+        headers: {
+          "User-Agent": userAgent,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: AbortSignal.timeout(4000),
+      });
 
-    if (embedRes.ok) {
-      const embedHtml = await embedRes.text();
+      if (embedRes.ok) {
+        const embedHtml = await embedRes.text();
 
-      // 1. Cek contextJSON di dalam halaman embed
-      const ctxMatch = embedHtml.match(/window\.__additionalDataLoaded\s*\(\s*['"][^'"]+['"]\s*,\s*(\{.+?\})\s*\)\s*;/s);
-      if (ctxMatch && ctxMatch[1]) {
-        try {
-          const parsedCtx = JSON.parse(ctxMatch[1]);
-          extractFromMediaObject(parsedCtx?.shortcode_media || parsedCtx);
-        } catch {}
-      }
+        const ctxMatch = embedHtml.match(/window\.__additionalDataLoaded\s*\(\s*['"][^'"]+['"]\s*,\s*(\{.+?\})\s*\)\s*;/s);
+        if (ctxMatch && ctxMatch[1]) {
+          try {
+            const parsedCtx = JSON.parse(ctxMatch[1]);
+            extractFromMediaObject(parsedCtx?.shortcode_media || parsedCtx);
+          } catch {}
+        }
 
-      // 2. Cek JSON terenkode di dalam atribut data-context / contextJSON
-      const jsonSliceMatch = embedHtml.match(/"contextJSON"\s*:\s*"(\{.+?\})"/);
-      if (jsonSliceMatch && jsonSliceMatch[1]) {
-        try {
-          const unescaped = JSON.parse(`"${jsonSliceMatch[1]}"`);
-          const parsedContext = JSON.parse(unescaped);
-          extractFromMediaObject(parsedContext?.gql_data?.shortcode_media || parsedContext?.gql_data || parsedContext);
-        } catch {}
-      }
+        const jsonSliceMatch = embedHtml.match(/"contextJSON"\s*:\s*"(\{.+?\})"/);
+        if (jsonSliceMatch && jsonSliceMatch[1]) {
+          try {
+            const unescaped = JSON.parse(`"${jsonSliceMatch[1]}"`);
+            const parsedContext = JSON.parse(unescaped);
+            extractFromMediaObject(parsedContext?.gql_data?.shortcode_media || parsedContext?.gql_data || parsedContext);
+          } catch {}
+        }
 
-      // 3. Ekstrak Username, Caption, dan Komentar langsung dari DOM HTML Embed
-      const embedUserMatch = embedHtml.match(/class="UsernameText"[^>]*>([^<]+)</i);
-      if (embedUserMatch && !username) {
-        username = embedUserMatch[1].trim();
-      }
+        const embedUserMatch = embedHtml.match(/class="UsernameText"[^>]*>([^<]+)</i);
+        if (embedUserMatch && !username) {
+          username = embedUserMatch[1].trim();
+        }
 
-      const captionBlockMatch = embedHtml.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/i);
-      if (captionBlockMatch) {
-        const cleanCap = captionBlockMatch[1]
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<[^>]+>/g, " ");
-        addIgText(cleanCap, "description", true, true);
-        mediaFound = true;
-      }
-
-      const commentBlocks = embedHtml.matchAll(/class="CaptionComment[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
-      for (const match of commentBlocks) {
-        const cleanComment = match[1]
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<[^>]+>/g, " ");
-        addIgText(cleanComment, "comment", false, false);
-        mediaFound = true;
-      }
-
-      // 4. Pindai langsung seluruh URL preset yang mungkin tertanam mentah di script embed
-      const rawUrlsInEmbed = normalizeFoundUrls(embedHtml);
-      for (const u of rawUrlsInEmbed) {
-        if (PRESET_5MB_REGEX.test(u) || PRESET_XML_REGEX.test(u) || SHORTLINK_REGEX.test(u)) {
-          addIgText(u, "comment", true, true);
+        const captionBlockMatch = embedHtml.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/i);
+        if (captionBlockMatch) {
+          const cleanCap = captionBlockMatch[1]
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<[^>]+>/g, " ");
+          addIgText(cleanCap, "description", true, true);
           mediaFound = true;
         }
-      }
-    }
-  } catch {}
 
-  // Tahap 4: Jalur Mobile API menggunakan konversi Shortcode -> Media ID Numerik
-  try {
-    const mediaId = instagramShortcodeToMediaId(shortcode);
-    if (mediaId && mediaId !== "0") {
-      const mobileHeaders = {
-        "User-Agent":
-          "Instagram 312.0.0.34.111 Android (33/13; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 548293122)",
-        Accept: "application/json",
-        "X-IG-App-ID": "936619743392459",
-        ...(cookieStr ? { Cookie: cookieStr } : {}),
-      };
-
-      // Ambil Info Media jika belum lengkap
-      if (!mediaFound || !caption) {
-        const infoRes = await fetch(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, {
-          headers: mobileHeaders,
-          signal: AbortSignal.timeout(7000),
-        });
-        if (infoRes.ok) {
-          const infoJson = await infoRes.json();
-          const firstItem = infoJson?.items?.[0];
-          if (firstItem) extractFromMediaObject(firstItem);
+        const commentBlocks = embedHtml.matchAll(/class="CaptionComment[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
+        for (const match of commentBlocks) {
+          const cleanComment = match[1]
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<[^>]+>/g, " ");
+          addIgText(cleanComment, "comment", false, false);
+          mediaFound = true;
         }
-      }
 
-      // Ambil daftar komentar publik dari Mobile Endpoint
-      const commRes = await fetch(
-        `https://i.instagram.com/api/v1/media/${mediaId}/comments/?can_support_threading=true&permalink_enabled=false`,
-        {
-          headers: mobileHeaders,
-          signal: AbortSignal.timeout(8000),
-        }
-      );
-      if (commRes.ok) {
-        const commJson = await commRes.json();
-        const commentsList = commJson?.comments || [];
-        for (const c of commentsList) {
-          const cUser = c?.user?.username || "";
-          const isAuth = Boolean(username && cUser === username);
-          if (c?.text) addIgText(c.text, "comment", isAuth, isAuth);
-          for (const rc of c?.preview_child_comments || []) {
-            const rUser = rc?.user?.username || "";
-            if (rc?.text) addIgText(rc.text, "reply", Boolean(username && rUser === username), false);
+        const rawUrlsInEmbed = normalizeFoundUrls(embedHtml);
+        for (const u of rawUrlsInEmbed) {
+          if (PRESET_5MB_REGEX.test(u) || PRESET_XML_REGEX.test(u) || SHORTLINK_REGEX.test(u)) {
+            addIgText(u, "comment", true, true);
+            mediaFound = true;
           }
         }
-        if (commJson?.caption?.text) {
-          addIgText(commJson.caption.text, "description", true, true);
-        }
-        mediaFound = true;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   stages.push({
     stage: "comments",
@@ -1247,7 +1192,7 @@ async function scrapeInstagram(url) {
     detail:
       igComments > 0
         ? `${igComments} komentar & ${igReplies} balasan Instagram berhasil diperiksa`
-        : "Caption & embed publik berhasil diperiksa (komentar tambahan dibatasi sesi login Instagram)",
+        : "Caption & embed publik berhasil diperiksa",
   });
 
   if (!mediaFound && scanItems.length === 0) {
@@ -1256,7 +1201,7 @@ async function scrapeInstagram(url) {
     );
   }
 
-  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
+  const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems, startTime + 9000);
   const found = presetLinks.length > 0;
 
   stages.push({
@@ -1379,7 +1324,7 @@ const isDirectRun =
       process.argv[1].endsWith("amfinder.js")));
 
 if (isDirectRun) {
-  const targetUrl = process.argv[2] || "https://vt.tiktok.com/ZS6e6k5jF/";
+  const targetUrl = process.argv[2] || "https://vt.tiktok.com/ZSgng6wD6/";
   findAmPresets(targetUrl)
     .then((res) => {
       console.log(JSON.stringify(res, null, 2));
