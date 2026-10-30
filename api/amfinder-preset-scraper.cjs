@@ -11,13 +11,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function cleanExtractedUrl(value) {
   return String(value || "")
     .trim()
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&")
     .replace(/[.,!?;:]+$/g, "")
     .replace(/[)\]}]+$/g, "")
     .replace(/[.,!?;:]+$/g, "");
 }
 
 function normalizeFoundUrls(text) {
-  const source = String(text || "").replace(/[\u200B-\u200D\uFEFF]/g, "");
+  const source = String(text || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&");
   const matches = source.match(URL_REGEX) || [];
   const normalized = [];
 
@@ -113,7 +120,7 @@ function detectPlatform(url) {
   const u = String(url || "").toLowerCase();
   if (/tiktok\.com/i.test(u) || /^\d{10,}$/.test(u)) return "tiktok";
   if (/youtu\.be|youtube\.com/i.test(u)) return "youtube";
-  if (/instagram\.com|instagr\.am/i.test(u)) return "instagram";
+  if (/instagram\.com|instagr\.am|ig\.me/i.test(u)) return "instagram";
   if (/facebook\.com|fb\.watch|fb\.com/i.test(u)) return "facebook";
   if (/twitter\.com|x\.com/i.test(u)) return "twitter";
   if (/threads\.(net|com)/i.test(u)) return "threads";
@@ -148,7 +155,6 @@ async function extractPresetsFromScanItems(scanItems) {
   const presetsMap = new Map();
   const otherLinksMap = new Map();
 
-  // Tangkap password global dari komentar kreator atau komentar pinned jika terpisah dari komentar link
   let fallbackMeta = { ratio: undefined, detail: undefined, password: undefined, rawSize: undefined };
   for (const item of scanItems) {
     if (item.byAuthor || item.pinned) {
@@ -282,7 +288,6 @@ async function extractPresetsFromScanItems(scanItems) {
     }
   });
 
-  // Urutkan preset: Prioritaskan milik kreator & komentar disematkan di urutan teratas
   const sortedPresets = Array.from(presetsMap.values()).sort((a, b) => {
     const scoreA = (a.byAuthor ? 4 : 0) + (a.pinned ? 2 : 0) + (a.type === "5mb" ? 1 : 0);
     const scoreB = (b.byAuthor ? 4 : 0) + (b.pinned ? 2 : 0) + (b.type === "5mb" ? 1 : 0);
@@ -472,7 +477,6 @@ async function scrapeTikTok(url) {
   let lastError = null;
   const stages = [];
 
-  // Tahap 1: Ekstraksi Metadata & ID Video TikTok dengan Retry Bertahap
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await fetch("https://www.tikwm.com/api/", {
@@ -597,7 +601,6 @@ async function scrapeTikTok(url) {
     return true;
   }
 
-  // Fetcher tangguh dengan auto-retry & backoff saat terkena rate-limit
   async function fetchJsonWithRetry(endpoint, params, maxRetries = 3) {
     let attemptError = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -625,7 +628,6 @@ async function scrapeTikTok(url) {
 
         if (json.code !== 0 && json.code !== "0") {
           const msg = String(json.msg || "Gagal membaca komentar.");
-          // Jika rate limit dari sisi TikWM (biasanya pesan berisi "1 request per second" atau "limit")
           if (/limit|fast|busy|try again|later/i.test(msg) && attempt + 1 < maxRetries) {
             await sleep(900 * (attempt + 1));
             continue;
@@ -671,10 +673,9 @@ async function scrapeTikTok(url) {
     return saysMore || Boolean(nextCursor);
   }
 
-  // Tahap 2: Paginasi Bertahap Komentar Utama
   let cursor = "0";
   const startTime = Date.now();
-  const MAX_SCAN_DURATION_MS = 22000; // Pengaman agar tidak terkena hard-timeout Serverless
+  const MAX_SCAN_DURATION_MS = 22000;
 
   for (let page = 0; page < 120; page++) {
     if (Date.now() - startTime > MAX_SCAN_DURATION_MS) break;
@@ -709,7 +710,7 @@ async function scrapeTikTok(url) {
 
       seenCursors.add(String(nextCursor));
       cursor = String(nextCursor);
-      await sleep(180); // Jeda berkala agar stabil
+      await sleep(180);
     } catch (error) {
       incomplete = true;
       lastError = error;
@@ -724,8 +725,6 @@ async function scrapeTikTok(url) {
     detail: `${commentCount} komentar utama dari ${commentPages} halaman berhasil dianalisis`,
   });
 
-  // Tahap 3: Pemindaian Mendalam Balasan Komentar (FIX: Menyertakan video_id & url!)
-  // Urutkan target balasan: dahulukan komentar Author, Pinned, dan komentar yang punya indikasi Preset
   const targets = scanItems
     .filter((item) => item.sourceType === "comment" && item.commentId && Number(item.replyTotal || 0) > 0)
     .sort((a, b) => {
@@ -746,7 +745,6 @@ async function scrapeTikTok(url) {
       if (Date.now() - startTime > MAX_SCAN_DURATION_MS) break;
 
       try {
-        // PERBAIKAN INTI: Menyertakan `video_id` dan `url` bersama `comment_id`
         const replyParams = {
           video_id: videoId || canonicalUrl,
           url: canonicalUrl,
@@ -774,7 +772,6 @@ async function scrapeTikTok(url) {
       } catch (error) {
         replyErrorsCount++;
         const errMsg = error instanceof Error ? error.message : String(error);
-        // Hanya tandai incomplete jika seluruh percobaan balasan gagal dan bukan sekadar 1 thread kosong
         if (replyCount === 0 && replyErrorsCount >= targets.length) {
           incomplete = true;
           if (!commentError) commentError = errMsg;
@@ -790,7 +787,6 @@ async function scrapeTikTok(url) {
     detail: `${replyCount} sub-balasan dari ${targets.length} diskusi terindikasi diperiksa`,
   });
 
-  // Tahap 4: Resolusi Link & Ekstraksi Mendalam
   const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
   const found = presetLinks.length > 0;
 
@@ -842,94 +838,433 @@ async function scrapeTikTok(url) {
   };
 }
 
+/**
+ * Konversi Shortcode Instagram ke Media ID Numerik (Base64 Instagram Alphabet)
+ */
+function instagramShortcodeToMediaId(shortcode) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  let mediaId = 0n;
+  const cleanCode = String(shortcode || "").slice(0, 11);
+  for (const ch of cleanCode) {
+    const idx = alphabet.indexOf(ch);
+    if (idx === -1) continue;
+    mediaId = mediaId * 64n + BigInt(idx);
+  }
+  return mediaId.toString();
+}
+
+function decodeHtmlEntities(str) {
+  return String(str || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;/gi, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/\\n/g, "\n");
+}
+
+/**
+ * 5-Stage Progressive Instagram Scraper (Reels, Post, Share URL, Embed, GraphQL & Mobile API)
+ */
 async function scrapeInstagram(url) {
-  const shortcodeMatch = url.match(/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/);
-  const shortcode = shortcodeMatch ? shortcodeMatch[1] : null;
-  if (!shortcode) throw new Error("Shortcode Instagram tidak valid.");
+  let workingUrl = String(url || "").trim();
+  const stages = [];
 
   const userAgent =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-  const homeRes = await fetch("https://www.instagram.com/", {
-    headers: {
-      "User-Agent": userAgent,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.8",
-    },
-    signal: AbortSignal.timeout(10000),
-  });
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-  const rawCookies = homeRes.headers.getSetCookie ? homeRes.headers.getSetCookie() : [];
-  const cookieStr = rawCookies.map((c) => c.split(";")[0]).join("; ");
-  const csrfMatch = cookieStr.match(/csrftoken=([^;]+)/);
-  const csrf = csrfMatch ? csrfMatch[1] : "";
-
-  const payload = new URLSearchParams({
-    variables: JSON.stringify({
-      shortcode,
-      __relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider: false,
-    }),
-    doc_id: "27128499623469141",
-    server_timestamps: "true",
-  });
-
-  const res = await fetch("https://www.instagram.com/graphql/query", {
-    method: "POST",
-    headers: {
-      "User-Agent": userAgent,
-      Accept: "*/*",
-      "Accept-Language": "en-US,en;q=0.8",
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-CSRFToken": csrf,
-      "X-IG-App-ID": "936619743392459",
-      Cookie: cookieStr,
-      Referer: `https://www.instagram.com/p/${shortcode}/`,
-    },
-    body: payload.toString(),
-    signal: AbortSignal.timeout(15000),
-  });
-
-  const json = await res.json();
-  const items = json?.data?.xdt_api__v1__media__shortcode__web_info?.items;
-  if (!items || !items.length) {
-    throw new Error("Media Instagram tidak ditemukan atau akun privat.");
+  // Tahap 1: Resolusi URL Share (/share/reel/... atau /share/p/...) jika diperlukan
+  let shortcodeMatch = workingUrl.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
+  if (!shortcodeMatch || /\/share\//i.test(workingUrl)) {
+    try {
+      const shareRes = await fetch(workingUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": userAgent,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (shareRes.url) {
+        workingUrl = shareRes.url;
+        shortcodeMatch = workingUrl.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
+      }
+    } catch {}
   }
 
-  const item = items[0];
-  const caption = item.caption?.text || "";
-  const username = item.user?.username || "";
+  const shortcode = shortcodeMatch ? shortcodeMatch[1] : null;
+  if (!shortcode) {
+    throw new Error("Format tautan Instagram tidak dikenali. Pastikan tautan berupa Post atau Reels.");
+  }
 
-  const scanItems = [{ text: caption, pinned: true, byAuthor: true, sourceType: "description" }];
+  const canonicalUrl = `https://www.instagram.com/reel/${shortcode}/`;
+  const scanItems = [];
+  const seenComments = new Set();
+  const seenReplies = new Set();
+
+  let caption = "";
+  let username = "";
+  let coverUrl = "";
   let igComments = 0;
   let igReplies = 0;
+  let mediaFound = false;
 
-  const commentEdges =
-    item.edge_media_to_parent_comment?.edges ||
-    item.edge_media_to_comment?.edges ||
-    item.comments?.edges ||
-    [];
-  for (const edge of commentEdges) {
-    const comment = edge?.node || edge;
-    const text = comment?.text || comment?.comment_text || "";
-    if (text) {
-      scanItems.push({ text, pinned: false, byAuthor: false, sourceType: "comment" });
-      igComments++;
+  function addIgText(text, sourceType = "comment", isAuthor = false, isPinned = false) {
+    const clean = decodeHtmlEntities(text).trim();
+    if (!clean) return;
+    if (sourceType === "description") {
+      if (!caption) caption = clean;
+      scanItems.push({ text: clean, pinned: true, byAuthor: true, sourceType: "description" });
+      return;
+    }
+    const targetSet = sourceType === "reply" ? seenReplies : seenComments;
+    if (targetSet.has(clean)) return;
+    targetSet.add(clean);
+
+    scanItems.push({
+      text: clean,
+      pinned: Boolean(isPinned || isAuthor),
+      byAuthor: Boolean(isAuthor),
+      sourceType,
+    });
+
+    if (sourceType === "reply") igReplies++;
+    else igComments++;
+  }
+
+  function extractFromMediaObject(mediaObj) {
+    if (!mediaObj || typeof mediaObj !== "object") return;
+    mediaFound = true;
+
+    const ownerUser =
+      mediaObj?.owner?.username ||
+      mediaObj?.user?.username ||
+      mediaObj?.caption?.user?.username ||
+      "";
+    if (ownerUser && !username) username = ownerUser;
+
+    const dispUrl =
+      mediaObj?.display_url ||
+      mediaObj?.thumbnail_src ||
+      mediaObj?.image_versions2?.candidates?.[0]?.url ||
+      "";
+    if (dispUrl && !coverUrl) coverUrl = dispUrl;
+
+    // Ekstraksi Caption dari berbagai struktur GraphQL / API v1
+    const capText =
+      mediaObj?.caption?.text ||
+      mediaObj?.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      mediaObj?.caption ||
+      "";
+    if (typeof capText === "string" && capText.trim()) {
+      addIgText(capText, "description", true, true);
     }
 
-    const replies = comment?.edge_threaded_comments?.edges || comment?.replies?.edges || [];
-    for (const replyEdge of replies) {
-      const reply = replyEdge?.node || replyEdge;
-      const replyText = reply?.text || reply?.comment_text || "";
-      if (replyText) {
-        scanItems.push({ text: replyText, pinned: false, byAuthor: false, sourceType: "reply" });
-        igReplies++;
+    // Ekstraksi Komentar & Sub-Balasan
+    const commentContainers = [
+      mediaObj?.edge_media_to_parent_comment?.edges,
+      mediaObj?.edge_media_to_comment?.edges,
+      mediaObj?. edge_media_preview_comment?.edges,
+      mediaObj?.comments?.edges,
+      mediaObj?.comments,
+      mediaObj?.preview_comments,
+    ];
+
+    for (const container of commentContainers) {
+      if (!Array.isArray(container)) continue;
+      for (const entry of container) {
+        const node = entry?.node || entry;
+        if (!node) continue;
+        const cUser = node?.owner?.username || node?.user?.username || "";
+        const isAuth = Boolean(username && cUser && cUser === username);
+        const cText = node?.text || node?.comment_text || "";
+        if (cText) addIgText(cText, "comment", isAuth, isAuth);
+
+        const replyContainers = [
+          node?.edge_threaded_comments?.edges,
+          node?.replies?.edges,
+          node?.child_comments,
+          node?.preview_child_comments,
+        ];
+        for (const rCont of replyContainers) {
+          if (!Array.isArray(rCont)) continue;
+          for (const rEntry of rCont) {
+            const rNode = rEntry?.node || rEntry;
+            const rUser = rNode?.owner?.username || rNode?.user?.username || "";
+            const rAuth = Boolean(username && rUser && rUser === username);
+            const rText = rNode?.text || rNode?.comment_text || "";
+            if (rText) addIgText(rText, "reply", rAuth, false);
+          }
+        }
       }
     }
+  }
+
+  // Tahap 2: Ambil Token Sesi & LSD dari Halaman Publik + Multi-DocID GraphQL
+  let cookieStr = "";
+  let csrf = "missing";
+  let lsdToken = "AVqbxe3J_YA";
+
+  try {
+    const pageRes = await fetch(`https://www.instagram.com/p/${shortcode}/`, {
+      headers: {
+        "User-Agent": userAgent,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+        "Sec-Fetch-Mode": "navigate",
+      },
+      signal: AbortSignal.timeout(9000),
+    });
+
+    const rawCookies = pageRes.headers.getSetCookie ? pageRes.headers.getSetCookie() : [];
+    cookieStr = rawCookies.map((c) => c.split(";")[0]).join("; ");
+    const csrfMatch = cookieStr.match(/csrftoken=([^;]+)/);
+    if (csrfMatch) csrf = csrfMatch[1];
+
+    const pageHtml = await pageRes.text();
+    const lsdMatch =
+      pageHtml.match(/\["LSD",\[\],\{"token":"([^"]+)"\}/) ||
+      pageHtml.match(/"lsd":"([^"]+)"/);
+    if (lsdMatch) lsdToken = lsdMatch[1];
+
+    // Ekstrak Meta OG langsung dari HTML halaman utama jika ada
+    const ogDescMatch =
+      pageHtml.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i) ||
+      pageHtml.match(/<meta\s+name="description"\s+content="([^"]+)"/i);
+    if (ogDescMatch && ogDescMatch[1]) {
+      const rawOg = decodeHtmlEntities(ogDescMatch[1]);
+      const userFromOg = rawOg.match(/(?:^|\s)@([a-zA-Z0-9._]+)/);
+      if (userFromOg && !username) username = userFromOg[1];
+      addIgText(rawOg, "description", true, true);
+      mediaFound = true;
+    }
+  } catch {}
+
+  // Daftar doc_id GraphQL Instagram (Post & Reels Web Info + Comments)
+  const graphqlDocIds = [
+    "8845758582119845",
+    "10015901848480474",
+    "27128499623469141",
+  ];
+
+  for (const docId of graphqlDocIds) {
+    try {
+      const payload = new URLSearchParams({
+        av: "0",
+        __d: "www",
+        __user: "0",
+        __a: "1",
+        __req: "1",
+        lsd: lsdToken,
+        variables: JSON.stringify({
+          shortcode,
+          fetch_comment_count: 50,
+          fetch_related_profile_media_count: 0,
+          parent_comment_count: 50,
+          child_comment_count: 10,
+          fetch_like_count: 10,
+          fetch_tagged_user_count: null,
+          fetch_preview_comment_count: 10,
+          has_threaded_comments: true,
+          hoisted_comment_id: null,
+          hoisted_reply_id: null,
+          __relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider: false,
+        }),
+        doc_id: docId,
+        server_timestamps: "true",
+      });
+
+      const gqlRes = await fetch("https://www.instagram.com/graphql/query", {
+        method: "POST",
+        headers: {
+          "User-Agent": userAgent,
+          Accept: "*/*",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": csrf,
+          "X-FB-LSD": lsdToken,
+          "X-IG-App-ID": "936619743392459",
+          "X-ASBD-ID": "129477",
+          ...(cookieStr ? { Cookie: cookieStr } : {}),
+          Referer: `https://www.instagram.com/p/${shortcode}/`,
+        },
+        body: payload.toString(),
+        signal: AbortSignal.timeout(9000),
+      });
+
+      if (gqlRes.ok) {
+        const json = await gqlRes.json();
+        const mediaItem =
+          json?.data?.xdt_shortcode_media ||
+          json?.data?.shortcode_media ||
+          json?.data?.xdt_api__v1__media__shortcode__web_info?.items?.[0];
+
+        if (mediaItem) {
+          extractFromMediaObject(mediaItem);
+          if (igComments > 0) break;
+        }
+      }
+    } catch {}
+  }
+
+  stages.push({
+    stage: "metadata",
+    status: mediaFound ? "done" : "partial",
+    detail: mediaFound
+      ? `Data utama Reels/Post @${username || "kreator"} terdeteksi`
+      : "Beralih ke jalur ekstraksi Embed & Mobile API",
+  });
+
+  // Tahap 3: Jalur Embed Captioned (/p/{shortcode}/embed/captioned/)
+  // Sangat ampuh menembus pemblokiran IP server untuk mengambil caption & komentar tersemat
+  try {
+    const embedRes = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+      headers: {
+        "User-Agent": userAgent,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(9000),
+    });
+
+    if (embedRes.ok) {
+      const embedHtml = await embedRes.text();
+
+      // 1. Cek contextJSON di dalam halaman embed
+      const ctxMatch = embedHtml.match(/window\.__additionalDataLoaded\s*\(\s*['"][^'"]+['"]\s*,\s*(\{.+?\})\s*\)\s*;/s);
+      if (ctxMatch && ctxMatch[1]) {
+        try {
+          const parsedCtx = JSON.parse(ctxMatch[1]);
+          extractFromMediaObject(parsedCtx?.shortcode_media || parsedCtx);
+        } catch {}
+      }
+
+      // 2. Cek JSON terenkode di dalam atribut data-context / contextJSON
+      const jsonSliceMatch = embedHtml.match(/"contextJSON"\s*:\s*"(\{.+?\})"/);
+      if (jsonSliceMatch && jsonSliceMatch[1]) {
+        try {
+          const unescaped = JSON.parse(`"${jsonSliceMatch[1]}"`);
+          const parsedContext = JSON.parse(unescaped);
+          extractFromMediaObject(parsedContext?.gql_data?.shortcode_media || parsedContext?.gql_data || parsedContext);
+        } catch {}
+      }
+
+      // 3. Ekstrak Username, Caption, dan Komentar langsung dari DOM HTML Embed
+      const embedUserMatch = embedHtml.match(/class="UsernameText"[^>]*>([^<]+)</i);
+      if (embedUserMatch && !username) {
+        username = embedUserMatch[1].trim();
+      }
+
+      const captionBlockMatch = embedHtml.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/i);
+      if (captionBlockMatch) {
+        const cleanCap = captionBlockMatch[1]
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<[^>]+>/g, " ");
+        addIgText(cleanCap, "description", true, true);
+        mediaFound = true;
+      }
+
+      const commentBlocks = embedHtml.matchAll(/class="CaptionComment[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
+      for (const match of commentBlocks) {
+        const cleanComment = match[1]
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<[^>]+>/g, " ");
+        addIgText(cleanComment, "comment", false, false);
+        mediaFound = true;
+      }
+
+      // 4. Pindai langsung seluruh URL preset yang mungkin tertanam mentah di script embed
+      const rawUrlsInEmbed = normalizeFoundUrls(embedHtml);
+      for (const u of rawUrlsInEmbed) {
+        if (PRESET_5MB_REGEX.test(u) || PRESET_XML_REGEX.test(u) || SHORTLINK_REGEX.test(u)) {
+          addIgText(u, "comment", true, true);
+          mediaFound = true;
+        }
+      }
+    }
+  } catch {}
+
+  // Tahap 4: Jalur Mobile API menggunakan konversi Shortcode -> Media ID Numerik
+  try {
+    const mediaId = instagramShortcodeToMediaId(shortcode);
+    if (mediaId && mediaId !== "0") {
+      const mobileHeaders = {
+        "User-Agent":
+          "Instagram 312.0.0.34.111 Android (33/13; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 548293122)",
+        Accept: "application/json",
+        "X-IG-App-ID": "936619743392459",
+        ...(cookieStr ? { Cookie: cookieStr } : {}),
+      };
+
+      // Ambil Info Media jika belum lengkap
+      if (!mediaFound || !caption) {
+        const infoRes = await fetch(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, {
+          headers: mobileHeaders,
+          signal: AbortSignal.timeout(7000),
+        });
+        if (infoRes.ok) {
+          const infoJson = await infoRes.json();
+          const firstItem = infoJson?.items?.[0];
+          if (firstItem) extractFromMediaObject(firstItem);
+        }
+      }
+
+      // Ambil daftar komentar publik dari Mobile Endpoint
+      const commRes = await fetch(
+        `https://i.instagram.com/api/v1/media/${mediaId}/comments/?can_support_threading=true&permalink_enabled=false`,
+        {
+          headers: mobileHeaders,
+          signal: AbortSignal.timeout(8000),
+        }
+      );
+      if (commRes.ok) {
+        const commJson = await commRes.json();
+        const commentsList = commJson?.comments || [];
+        for (const c of commentsList) {
+          const cUser = c?.user?.username || "";
+          const isAuth = Boolean(username && cUser === username);
+          if (c?.text) addIgText(c.text, "comment", isAuth, isAuth);
+          for (const rc of c?.preview_child_comments || []) {
+            const rUser = rc?.user?.username || "";
+            if (rc?.text) addIgText(rc.text, "reply", Boolean(username && rUser === username), false);
+          }
+        }
+        if (commJson?.caption?.text) {
+          addIgText(commJson.caption.text, "description", true, true);
+        }
+        mediaFound = true;
+      }
+    }
+  } catch {}
+
+  stages.push({
+    stage: "comments",
+    status: igComments > 0 ? "done" : "partial",
+    detail:
+      igComments > 0
+        ? `${igComments} komentar & ${igReplies} balasan Instagram berhasil diperiksa`
+        : "Caption & embed publik berhasil diperiksa (komentar tambahan dibatasi sesi login Instagram)",
+  });
+
+  if (!mediaFound && scanItems.length === 0) {
+    throw new Error(
+      "Instagram membatasi akses tanpa login untuk Reels ini atau akun bersifat privat. Jika preset ada di komentar, coba salin link presetnya secara langsung."
+    );
   }
 
   const { presetLinks, otherLinks } = await extractPresetsFromScanItems(scanItems);
   const found = presetLinks.length > 0;
 
-  const canonicalUrl = `https://www.instagram.com/p/${shortcode}/`;
+  stages.push({
+    stage: "extraction",
+    status: "done",
+    detail: `${presetLinks.length} preset valid & ${otherLinks.length} tautan pendukung diekstrak`,
+  });
+
   return {
     status: true,
     code: 200,
@@ -947,17 +1282,21 @@ async function scrapeInstagram(url) {
       video: {
         shortcode,
         url: canonicalUrl,
-        title: caption,
+        title: caption || `Instagram Reels (${shortcode})`,
+        cover: coverUrl || undefined,
       },
       scan: {
         comments: igComments,
         replies: igReplies,
-        incomplete: false,
+        incomplete: !found && igComments === 0,
+        stages,
       },
       presetLinks,
       message: found
-        ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion.`
-        : "Tidak ditemukan preset pada postingan Instagram ini.",
+        ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion dari Instagram.`
+        : igComments > 0
+          ? `Sudah memeriksa deskripsi, ${igComments} komentar, dan ${igReplies} balasan Instagram, namun belum ditemukan link preset.`
+          : "Deskripsi dan embed Reels telah diperiksa, namun Instagram menyembunyikan daftar komentar penuh untuk akses publik tanpa login.",
       otherLinks: otherLinks.length > 0 ? otherLinks : undefined,
     },
   };
@@ -1036,6 +1375,7 @@ const isDirectRun =
   (typeof process !== "undefined" &&
     process.argv[1] &&
     (process.argv[1].endsWith("amfinder-preset-scraper.js") ||
+      process.argv[1].endsWith("amfinder-preset-scraper.cjs") ||
       process.argv[1].endsWith("amfinder.js")));
 
 if (isDirectRun) {
