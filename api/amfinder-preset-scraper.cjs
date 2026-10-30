@@ -270,6 +270,7 @@ async function scrapeYouTube(url) {
   let youtubeCommentsScanned = 0;
   let youtubeRepliesScanned = 0;
   let youtubeCommentsUnavailable = false;
+  let youtubeCommentsError = "";
   const youtubeKey = process.env.YOUTUBE_API_KEY;
 
   // YouTube comments require an API key. If configured, paginate through
@@ -350,8 +351,9 @@ async function scrapeYouTube(url) {
         seenTokens.add(nextToken);
         pageToken = nextToken;
       }
-    } catch {
+    } catch (error) {
       youtubeCommentsUnavailable = true;
+      youtubeCommentsError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -383,13 +385,14 @@ async function scrapeYouTube(url) {
         replies: youtubeRepliesScanned,
         incomplete: youtubeCommentsUnavailable || !youtubeKey,
         requiresApiKey: !youtubeKey,
+        error: youtubeCommentsError || undefined,
       },
       message: found
         ? `Berhasil menemukan ${presetLinks.length} preset Alight Motion dari sumber video dan komentar yang tersedia.`
         : !youtubeKey
           ? "Deskripsi video diperiksa. Untuk memindai komentar dan balasan YouTube, tambahkan YOUTUBE_API_KEY di Environment Variables Vercel."
           : youtubeCommentsUnavailable
-            ? "Sebagian komentar YouTube tidak berhasil diakses oleh API."
+            ? `Komentar YouTube gagal diakses: ${youtubeCommentsError || "API tidak memberikan respons yang dapat diproses."}`
             : `Sudah memeriksa ${youtubeCommentsScanned} komentar dan ${youtubeRepliesScanned} balasan, tetapi belum menemukan preset yang dikenali.` ,
       otherLinks: otherLinks.length > 0 ? otherLinks : undefined,
     },
@@ -456,6 +459,7 @@ async function scrapeTikTok(url) {
   let replyCount = 0;
   let commentPages = 0;
   let incomplete = false;
+  let commentError = "";
 
   if (vData.title) {
     scanItems.push({
@@ -551,10 +555,24 @@ async function scrapeTikTok(url) {
 
   function getItems(data) {
     if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.comments)) return data.comments;
-    if (Array.isArray(data?.comment_list)) return data.comment_list;
-    if (Array.isArray(data?.comments_list)) return data.comments_list;
-    return [];
+    // TikWM/third-party responses have changed their envelope names over time.
+    const candidates = [
+      data?.comments, data?.comment_list, data?.comments_list,
+      data?.list, data?.items, data?.data?.comments,
+      data?.data?.comment_list, data?.data?.list,
+      data?.data?.items, data?.data?.data?.comments,
+      data?.data?.data?.list,
+    ];
+    return candidates.find(Array.isArray) || [];
+  }
+
+  function hasMorePages(data, currentCursor, nextCursor) {
+    const raw = data?.hasMore ?? data?.has_more ?? data?.has_more_comments ?? data?.more;
+    const saysMore = raw === true || raw === 1 || raw === "1" || raw === "true";
+    const saysDone = raw === false || raw === 0 || raw === "0" || raw === "false";
+    if (saysDone) return false;
+    if (nextCursor == null || String(nextCursor) === String(currentCursor)) return false;
+    return saysMore || Boolean(nextCursor);
   }
 
   // Mengambil seluruh halaman komentar yang disediakan API.
@@ -582,13 +600,10 @@ async function scrapeTikTok(url) {
         for (const reply of embeddedReplies) addComment(reply, "reply");
       }
 
-      const hasMore = Boolean(data?.hasMore ?? data?.has_more ?? data?.has_more_comments);
-      const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor;
+      const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor ?? data?.data?.cursor;
 
       if (
-        !hasMore ||
-        nextCursor == null ||
-        String(nextCursor) === cursor ||
+        !hasMorePages(data, cursor, nextCursor) ||
         seenCursors.has(String(nextCursor))
       ) {
         break;
@@ -599,6 +614,7 @@ async function scrapeTikTok(url) {
     } catch (error) {
       incomplete = true;
       lastError = error;
+      commentError = error instanceof Error ? error.message : String(error);
       break;
     }
   }
@@ -646,13 +662,10 @@ async function scrapeTikTok(url) {
           addComment(reply, "reply");
         }
 
-        const hasMore = Boolean(data?.hasMore ?? data?.has_more ?? data?.has_more_comments);
-        const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor;
+        const nextCursor = data?.cursor ?? data?.next_cursor ?? data?.nextCursor ?? data?.data?.cursor;
 
         if (
-          !hasMore ||
-          nextCursor == null ||
-          String(nextCursor) === replyCursor ||
+          !hasMorePages(data, replyCursor, nextCursor) ||
           replyCursors.has(String(nextCursor))
         ) {
           break;
@@ -660,8 +673,9 @@ async function scrapeTikTok(url) {
 
         replyCursors.add(String(nextCursor));
         replyCursor = String(nextCursor);
-      } catch {
+      } catch (error) {
         incomplete = true;
+        if (!commentError) commentError = error instanceof Error ? error.message : String(error);
         break;
       }
     }
@@ -700,13 +714,14 @@ async function scrapeTikTok(url) {
         replies: replyCount,
         commentPages,
         incomplete,
+        error: commentError || undefined,
       },
       presetLinks,
       otherLinks: otherLinks.length ? otherLinks : undefined,
       message: found
         ? `Ditemukan ${presetLinks.length} preset dari ${commentCount} komentar dan ${replyCount} balasan.`
         : incomplete
-          ? `Pemindaian belum lengkap: ${commentCount} komentar dan ${replyCount} balasan berhasil diperiksa. Layanan komentar membatasi atau gagal merespons.`
+          ? `Pemindaian belum lengkap: ${commentCount} komentar dan ${replyCount} balasan berhasil diperiksa.${commentError ? ` Penyebab: ${commentError}` : " Layanan komentar membatasi atau gagal merespons."}`
           : `Sudah memeriksa ${commentCount} komentar dan ${replyCount} balasan, tetapi belum menemukan link preset yang dikenali.`,
     },
   };
