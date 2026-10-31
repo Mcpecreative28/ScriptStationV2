@@ -44,9 +44,14 @@ function extractAction(req) {
   return '';
 }
 
-function send(res, status, data) {
+function send(res, status, data, noCache = false) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  res.setHeader(
+    'Cache-Control',
+    noCache
+      ? 'no-store, max-age=0'
+      : 'public, s-maxage=60, stale-while-revalidate=300'
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.status(status).json(data);
 }
@@ -63,17 +68,17 @@ export default async function handler(req, res) {
   try {
     const action = extractAction(req);
     const page = getNumber(req.query?.page, 1, 1, 10000);
-    const limit = getNumber(req.query?.limit, 24, 1, 40);
+    const limit = getNumber(req.query?.limit, 24, 1, 48);
 
     let result;
 
     switch (action) {
       case 'search': {
         const query = getParam(req.query?.q).trim();
-        if (!query || query.length > 100) {
+        if (query.length > 100) {
           return send(res, 400, {
             status: false,
-            error: 'Masukkan kata kunci pencarian (maksimal 100 karakter).',
+            error: 'Kata kunci pencarian maksimal 100 karakter.',
           });
         }
 
@@ -84,17 +89,18 @@ export default async function handler(req, res) {
           format: getParam(req.query?.format),
           status: getParam(req.query?.status),
           year: getParam(req.query?.year),
+          sort: getParam(req.query?.sort, 'popular'),
         });
-        break;
+        return send(res, 200, result);
       }
 
       case 'latest':
         result = await anime.getLatest({ page, limit });
-        break;
+        return send(res, 200, result);
 
       case 'popular':
         result = await anime.getPopular({ page, limit });
-        break;
+        return send(res, 200, result);
 
       case 'detail': {
         const slug = getParam(req.query?.slug).trim();
@@ -105,7 +111,7 @@ export default async function handler(req, res) {
           });
         }
         result = await anime.getDetail(slug);
-        break;
+        return send(res, 200, result);
       }
 
       case 'episodes': {
@@ -117,7 +123,7 @@ export default async function handler(req, res) {
           });
         }
         result = await anime.getEpisodes(id);
-        break;
+        return send(res, 200, result);
       }
 
       case 'stream': {
@@ -139,7 +145,7 @@ export default async function handler(req, res) {
           server || null,
           ['sub', 'dub'].includes(audio) ? audio : 'sub'
         );
-        break;
+        return send(res, 200, result, true);
       }
 
       default:
@@ -149,8 +155,6 @@ export default async function handler(req, res) {
           available: ['search', 'latest', 'popular', 'detail', 'episodes', 'stream'],
         });
     }
-
-    return send(res, 200, result);
   } catch (error) {
     console.error('ANIME_API_ERROR:', error);
     return send(res, 502, {
