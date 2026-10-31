@@ -9,12 +9,13 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Play,
   RotateCcw,
   Server,
   Sparkles,
   Volume2,
 } from 'lucide-react';
-import Shell from '../../components/Shell';
+import Shell from '../components/Shell';
 import type { WatchHistoryItem } from './AnimeHome';
 
 const HISTORY_STORAGE_KEY = 'ss_v2_anime_history';
@@ -90,6 +91,7 @@ export default function AnimeWatch() {
   const navigate = useNavigate();
 
   const currentEp = Math.max(1, parseInt(episode || '1', 10));
+  // Kunci default ke Server 2 karena Server 2 adalah server aktif utama di AnimeKai
   const [server, setServer] = useState('2');
   const [audio, setAudio] = useState<'sub' | 'dub'>('sub');
   const [theaterMode, setTheaterMode] = useState(false);
@@ -143,19 +145,25 @@ export default function AnimeWatch() {
   const hasPrev = currentEp > 1;
   const hasNext = totalEpisodes === 0 || currentEp < totalEpisodes;
 
-  const availableServers: string[] =
-    Array.isArray(streamData?.player_options?.servers) &&
-    streamData.player_options.servers.length > 0
-      ? streamData.player_options.servers.map((s: any) =>
-          typeof s === 'string' ? s : s.id
-        )
-      : ['1', '2', '3'];
-
   const availableAudios: string[] =
     Array.isArray(streamData?.player_options?.audios) &&
     streamData.player_options.audios.length > 0
       ? streamData.player_options.audios
       : ['sub', 'dub'];
+
+  // Gunakan Proxy Embed URL milik kita sendiri (+ #hash) agar tidak terkena blokir X-Frame-Options
+  const iframeSrc = streamData?.proxy_embed_url
+    ? `${streamData.proxy_embed_url}#${streamData.stream_hash || ''}`
+    : streamData?.stream_url || '';
+
+  function openPopupPlayer() {
+    if (!streamData?.stream_url) return;
+    window.open(
+      streamData.stream_url,
+      'AnimeKaiPlayer',
+      'width=960,height=540,menubar=no,toolbar=no,location=no,status=no'
+    );
+  }
 
   return (
     <Shell>
@@ -223,7 +231,7 @@ export default function AnimeWatch() {
                         className="animate-spin text-rose-500"
                       />
                       <p className="text-xs text-zinc-400">
-                        Menghubungkan stream server {server}...
+                        Menghubungkan stream Server {server}...
                       </p>
                     </div>
                   ) : error ? (
@@ -233,21 +241,16 @@ export default function AnimeWatch() {
                       </p>
                       <button
                         type="button"
-                        onClick={() =>
-                          setServer((prev) =>
-                            prev === '2' ? '1' : prev === '1' ? '3' : '2'
-                          )
-                        }
+                        onClick={() => setServer('2')}
                         className="inline-flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-black transition hover:bg-rose-400"
                       >
-                        <RotateCcw size={14} /> Coba Server Lain
+                        <RotateCcw size={14} /> Muat Ulang Server 2
                       </button>
                     </div>
-                  ) : streamData?.stream_url ? (
-                    /* PENTING: Tanpa referrerPolicy="no-referrer" agar play.anikai.org berjalan normal 1:1 */
+                  ) : iframeSrc ? (
                     <iframe
-                      key={streamData.stream_url}
-                      src={streamData.stream_url}
+                      key={iframeSrc}
+                      src={iframeSrc}
                       title={`${streamData.title} Episode ${currentEp}`}
                       allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                       allowFullScreen
@@ -264,24 +267,28 @@ export default function AnimeWatch() {
                 <div className="border-t border-white/[0.08] bg-[#0b0b11] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-4">
-                      {/* Pilihan Server AnimeKai (1, 2, 3) */}
+                      {/* Pilihan Server (Utamakan Server 2) */}
                       <div className="flex items-center gap-1.5">
                         <Server size={14} className="text-rose-400" />
                         <span className="text-[11px] font-semibold text-zinc-400">
                           Server:
                         </span>
-                        {availableServers.map((srv) => (
+                        {[
+                          { id: '2', label: 'Server 2 (Utama)' },
+                          { id: '1', label: 'Server 1' },
+                          { id: '3', label: 'Server 3' },
+                        ].map((srv) => (
                           <button
-                            key={srv}
+                            key={srv.id}
                             type="button"
-                            onClick={() => setServer(String(srv))}
+                            onClick={() => setServer(srv.id)}
                             className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                              String(server) === String(srv)
+                              String(server) === srv.id
                                 ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-black shadow-sm'
                                 : 'border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'
                             }`}
                           >
-                            Server {srv}
+                            {srv.label}
                           </button>
                         ))}
                       </div>
@@ -345,21 +352,33 @@ export default function AnimeWatch() {
                     </div>
                   </div>
 
+                  {/* Baris Tombol Pop-Up Player Langsung (100% Anti-Blokir Browser) */}
                   {streamData?.stream_url && (
-                    <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[11px] text-zinc-500">
-                      <span>
-                        Jika satu server tidak tersedia, silakan klik Server 1, 2,
-                        atau 3.
+                    <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3.5">
+                      <span className="text-[11px] text-zinc-400">
+                        Jika browser membatasi embed pihak ketiga, gunakan
+                        pemutar langsung Server 2:
                       </span>
-                      <a
-                        href={streamData.stream_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-zinc-400 hover:text-rose-300"
-                      >
-                        Buka Langsung Player
-                        <ExternalLink size={12} />
-                      </a>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={openPopupPlayer}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 px-3.5 py-2 text-xs font-bold text-black shadow transition hover:brightness-110"
+                        >
+                          <Play size={13} fill="currentColor" />
+                          Putar di Jendela Pop-Up
+                        </button>
+
+                        <a
+                          href={streamData.stream_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                        >
+                          Buka Langsung
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
