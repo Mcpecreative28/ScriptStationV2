@@ -15,7 +15,7 @@ import {
   Sparkles,
   Volume2,
 } from 'lucide-react';
-import Shell from '../components/Shell';
+import Shell from '../../components/Shell';
 import type { WatchHistoryItem } from './AnimeHome';
 
 const HISTORY_STORAGE_KEY = 'ss_v2_anime_history';
