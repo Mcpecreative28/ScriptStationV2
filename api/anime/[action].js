@@ -129,7 +129,7 @@ export default async function handler(req, res) {
       case 'stream': {
         const slug = getParam(req.query?.slug).trim();
         const episode = getNumber(req.query?.episode, 1, 1, 100000);
-        const server = getParam(req.query?.server, '');
+        const server = getParam(req.query?.server, '2');
         const audio = getParam(req.query?.audio, 'sub').toLowerCase();
 
         if (!slug || slug.length > 150) {
@@ -142,24 +142,49 @@ export default async function handler(req, res) {
         result = await anime.getStream(
           slug,
           episode,
-          server || null,
+          server || '2',
           ['sub', 'dub'].includes(audio) ? audio : 'sub'
         );
         return send(res, 200, result, true);
+      }
+
+      case 'embed': {
+        const hash = getParam(req.query?.hash).trim();
+        const host = getParam(req.query?.host, 'https://play.anikai.org').trim();
+
+        if (!hash) {
+          return res.status(400).send('Hash stream tidak ditemukan.');
+        }
+
+        const html = await anime.fetchPlayerEmbedHtml(hash, host);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, s-maxage=300');
+        // Pastikan tidak ada X-Frame-Options agar iframe web kita diizinkan penuh
+        res.removeHeader('X-Frame-Options');
+        return res.status(200).send(html);
       }
 
       default:
         return send(res, 404, {
           status: false,
           error: `Endpoint AnimeHub (${action || 'kosong'}) tidak ditemukan.`,
-          available: ['search', 'latest', 'popular', 'detail', 'episodes', 'stream'],
+          available: [
+            'search',
+            'latest',
+            'popular',
+            'detail',
+            'episodes',
+            'stream',
+            'embed',
+          ],
         });
     }
   } catch (error) {
     console.error('ANIME_API_ERROR:', error);
     return send(res, 502, {
       status: false,
-      error: error instanceof Error ? error.message : 'Gagal mengambil data anime.',
+      error:
+        error instanceof Error ? error.message : 'Gagal mengambil data anime.',
     });
   }
 }
