@@ -12,9 +12,6 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 jam TTL
 let memoryCatalogCache = null;
 let memoryCacheTimestamp = 0;
 
-/**
- * Lightweight native HTTP/HTTPS client (IPv4 forced, auto redirect, fast keepalive)
- */
 function request(urlStr, options = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -78,26 +75,17 @@ function request(urlStr, options = {}) {
   });
 }
 
-/**
- * Bersihkan nilai atribut HTML dari tanda kutip (" atau ') yang tidak sengaja ikut terambil regex
- */
 function stripQuotes(val) {
   if (!val) return "";
   return String(val).trim().replace(/^['"]+|['"]+$/g, "").trim();
 }
 
-/**
- * Pastikan slug untuk /watch/ dan gambar selalu berformat slug-id (misal: one-piece-5773)
- */
 function buildFullSlug(slug, id) {
   const clean = String(slug || "").trim().replace(/^\/watch\/|\/$/g, "");
   if (!id) return clean;
   return clean.endsWith(`-${id}`) ? clean : `${clean}-${id}`;
 }
 
-/**
- * Build image URLs helper
- */
 function buildImages(slug, id) {
   const fileKey = buildFullSlug(slug, id);
   return {
@@ -108,9 +96,6 @@ function buildImages(slug, id) {
   };
 }
 
-/**
- * Normalisasi item anime dari catalog-index.json
- */
 function formatAnimeItem(item) {
   const rawSlug = item.s || "";
   const id = item.i || null;
@@ -144,9 +129,6 @@ function formatAnimeItem(item) {
   };
 }
 
-/**
- * Fetch dan cache catalog-index.json (in-memory + /tmp)
- */
 async function getCatalog(forceRefresh = false) {
   const now = Date.now();
 
@@ -186,9 +168,6 @@ async function getCatalog(forceRefresh = false) {
   return catalog;
 }
 
-/**
- * Search anime berdasarkan kata kunci dan filter opsional
- */
 async function searchAnime(query = "", options = {}) {
   const catalog = await getCatalog();
   const q = String(query || "").trim().toLowerCase();
@@ -268,9 +247,6 @@ async function searchAnime(query = "", options = {}) {
   };
 }
 
-/**
- * Dapatkan anime terbaru (berdasarkan episode terbaru atau update date)
- */
 async function getLatest(options = {}) {
   const catalog = await getCatalog();
   const limit = Math.max(1, parseInt(options.limit || 20, 10));
@@ -297,9 +273,6 @@ async function getLatest(options = {}) {
   };
 }
 
-/**
- * Dapatkan anime populer / top score
- */
 async function getPopular(options = {}) {
   const catalog = await getCatalog();
   const limit = Math.max(1, parseInt(options.limit || 20, 10));
@@ -325,9 +298,6 @@ async function getPopular(options = {}) {
   };
 }
 
-/**
- * Ambil daftar episode anime dari /episodes/${animeId}.json
- */
 async function getEpisodes(animeId) {
   if (!animeId) {
     throw new Error("Parameter animeId wajib diisi");
@@ -358,9 +328,6 @@ async function getEpisodes(animeId) {
   };
 }
 
-/**
- * Cari item di catalog berdasarkan ID angka, slug murni, atau slug-id (contoh: one-piece-5773)
- */
 function findInCatalog(catalog, slugOrId) {
   const cleanInput = String(slugOrId || "")
     .trim()
@@ -388,9 +355,6 @@ function findInCatalog(catalog, slugOrId) {
   return match;
 }
 
-/**
- * Dapatkan detail lengkap anime: metadata + synopsis + watch info + full episodes list
- */
 async function getDetail(slugOrId) {
   if (!slugOrId) {
     throw new Error("Parameter slug atau animeId wajib diisi");
@@ -403,7 +367,6 @@ async function getDetail(slugOrId) {
     .trim()
     .replace(/^\/watch\/|\/$/g, "");
 
-  // Buat kandidat URL /watch/ (prioritaskan format dengan -id seperti one-piece-5773)
   const slugCandidates = [];
   if (animeEntry) {
     const withId = buildFullSlug(animeEntry.s, animeEntry.i);
@@ -436,7 +399,6 @@ async function getDetail(slugOrId) {
 
   const html = watchPageRes.body;
 
-  // Gunakan regex 1:1 asli Vamz Spectre + stripQuotes agar bebas dari tanda kutip (" / ')
   const dataId = stripQuotes((html.match(/data-id=([^\s>]+)/) || [])[1]);
   const dataSeal = stripQuotes((html.match(/data-seal=([^\s>]+)/) || [])[1]);
   const dataPlayer =
@@ -495,7 +457,6 @@ async function getDetail(slugOrId) {
         watch_url: `${BASE_URL}/watch/${resolvedSlug}/`,
       };
 
-  // Rekomendasi berdasarkan genre yang sama
   let recommendations = [];
   if (Array.isArray(baseFormatted.genres) && baseFormatted.genres.length > 0) {
     const mainGenre = baseFormatted.genres[0].toLowerCase();
@@ -522,7 +483,7 @@ async function getDetail(slugOrId) {
         seal: dataSeal || null,
         server_default: dataServerDefault,
         available_servers:
-          availableServers.length > 0 ? availableServers : ["1", "2", "3"],
+          availableServers.length > 0 ? availableServers : ["2", "1", "3"],
         available_audios:
           availableAudios.length > 0 ? availableAudios : ["sub", "dub"],
       },
@@ -533,12 +494,12 @@ async function getDetail(slugOrId) {
 }
 
 /**
- * Resolve direct video player URL dan iframe embed (1:1 Asli Vamz Spectre)
+ * Resolve direct video player URL + Proxy Embed URL agar lolos X-Frame-Options
  */
 async function getStream(
   slugOrId,
   episodeNumber = 1,
-  server = null,
+  server = "2",
   audio = "sub"
 ) {
   if (!slugOrId) {
@@ -555,6 +516,7 @@ async function getStream(
     );
   }
 
+  // Default ke Server 2 karena Server 2 adalah server aktif utama di AnimeKai
   const selectedServer = stripQuotes(
     server ? String(server) : anime.player.server_default || "2"
   );
@@ -566,7 +528,11 @@ async function getStream(
 
   const streamHash = `${anime.player.seal}.${ep}.${selectedServer}.${selectedAudio}`;
   const streamUrl = `${playerHost}/watch#${streamHash}`;
-  const iframeHtml = `<iframe src="${streamUrl}" title="${anime.title} Episode ${ep}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" width="100%" height="100%"></iframe>`;
+  const proxyEmbedUrl = `/api/anime/embed?hash=${encodeURIComponent(
+    streamHash
+  )}&host=${encodeURIComponent(playerHost)}`;
+
+  const iframeHtml = `<iframe src="${proxyEmbedUrl}" title="${anime.title} Episode ${ep}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" width="100%" height="100%"></iframe>`;
 
   const episodeItem =
     anime.episodes.find((e) => Number(e.episode) === ep) || null;
@@ -587,7 +553,9 @@ async function getStream(
       server: selectedServer,
       audio: selectedAudio,
       seal: anime.player.seal,
+      stream_hash: streamHash,
       stream_url: streamUrl,
+      proxy_embed_url: proxyEmbedUrl,
       iframe_embed: iframeHtml,
       player_options: {
         servers: anime.player.available_servers,
@@ -598,6 +566,59 @@ async function getStream(
   };
 }
 
+/**
+ * Mengambil halaman HTML dari play.anikai.org/watch dan menyuntikkan hash episode
+ * sehingga bisa dimuat di dalam iframe ScriptStationV2 tanpa blokir X-Frame-Options / CSP!
+ */
+async function fetchPlayerEmbedHtml(streamHash, playerHost = "https://play.anikai.org") {
+  const cleanHost = String(playerHost || "https://play.anikai.org").replace(
+    /\/+$/,
+    ""
+  );
+  const cleanHash = String(streamHash || "").replace(/^#+/, "").trim();
+
+  const res = await request(`${cleanHost}/watch`, {
+    headers: {
+      Referer: "https://anikai.org/",
+      Origin: "https://anikai.org",
+    },
+  });
+
+  if (res.status !== 200 || !res.body) {
+    throw new Error(`Gagal memuat player host (HTTP ${res.status})`);
+  }
+
+  let html = res.body;
+
+  // Hapus meta CSP internal jika ada
+  html = html.replace(
+    /<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi,
+    ""
+  );
+
+  // Suntikkan <base href="https://play.anikai.org/"> dan set window.location.hash sebelum script player berjalan
+  const injection = `
+    <base href="${cleanHost}/">
+    <meta name="referrer" content="no-referrer">
+    <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;}</style>
+    <script>
+      try {
+        if (${JSON.stringify(cleanHash)} && window.location.hash !== '#' + ${JSON.stringify(cleanHash)}) {
+          window.location.hash = '#' + ${JSON.stringify(cleanHash)};
+        }
+      } catch (e) {}
+    </script>
+  `;
+
+  if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(/<head[^>]*>/i, (match) => `${match}${injection}`);
+  } else {
+    html = `${injection}${html}`;
+  }
+
+  return html;
+}
+
 module.exports = {
   searchAnime,
   getLatest,
@@ -606,4 +627,5 @@ module.exports = {
   getEpisodes,
   getStream,
   getCatalog,
+  fetchPlayerEmbedHtml,
 };
