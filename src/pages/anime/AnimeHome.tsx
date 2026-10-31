@@ -7,7 +7,6 @@ import {
   Search,
   Sparkles,
   Star,
-  Tv,
 } from 'lucide-react';
 import Shell from '../../components/Shell';
 
@@ -23,6 +22,18 @@ type AnimeCard = {
   year?: number;
 };
 
+async function safeFetchList(url: string): Promise<AnimeCard[]> {
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const text = await res.text();
+    if (!text || text.trim().startsWith('<')) return [];
+    const json = JSON.parse(text);
+    return Array.isArray(json?.results) ? json.results : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function AnimeHome() {
   const navigate = useNavigate();
   const [searchInput, setSearchInput] = useState('');
@@ -33,18 +44,13 @@ export default function AnimeHome() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [popRes, latRes] = await Promise.all([
-          fetch('/api/anime/popular?limit=10'),
-          fetch('/api/anime/latest?limit=12'),
+        const [popList, latList] = await Promise.all([
+          safeFetchList('/api/anime/popular?limit=10'),
+          safeFetchList('/api/anime/latest?limit=12'),
         ]);
 
-        const popJson = await popRes.json();
-        const latJson = await latRes.json();
-
-        setPopular(popJson?.results || []);
-        setLatest(latJson?.results || []);
-      } catch (err) {
-        console.error('ANIME_HOME_FETCH_ERROR:', err);
+        setPopular(popList);
+        setLatest(latList);
       } finally {
         setLoading(false);
       }

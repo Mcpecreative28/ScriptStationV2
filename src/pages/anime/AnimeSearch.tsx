@@ -15,6 +15,32 @@ type AnimeItem = {
   year?: number;
 };
 
+async function safeFetchJson(url: string) {
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json' },
+  });
+  const text = await response.text();
+
+  if (!text || text.trim().startsWith('<')) {
+    throw new Error(
+      `Endpoint API belum merespons JSON (HTTP ${response.status}). Pastikan vercel.json sudah diperbarui dan di-deploy ulang.`
+    );
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons server bukan JSON valid (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok || data?.status === false) {
+    throw new Error(data?.error || `Permintaan gagal (HTTP ${response.status}).`);
+  }
+
+  return data;
+}
+
 export default function AnimeSearch() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
@@ -37,13 +63,9 @@ export default function AnimeSearch() {
     setError('');
 
     try {
-      const response = await fetch(`/api/anime/search?q=${encodeURIComponent(keyword)}&limit=30`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Pencarian gagal diproses.');
-      }
-
+      const data = await safeFetchJson(
+        `/api/anime/search?q=${encodeURIComponent(keyword.trim())}&limit=30`
+      );
       setResults(data.results || data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Terjadi gangguan jaringan.');
@@ -88,7 +110,7 @@ export default function AnimeSearch() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Contoh: Jujutsu Kaisen, Solo Leveling..."
+                placeholder="Contoh: Naruto, One Piece, Solo Leveling..."
                 className="min-h-[48px] w-full rounded-xl border border-white/10 bg-black/40 pl-11 pr-4 text-xs text-white outline-none transition placeholder:text-zinc-600 focus:border-violet-400 sm:text-sm"
               />
             </div>
@@ -102,7 +124,11 @@ export default function AnimeSearch() {
             </button>
           </form>
 
-          {error && <p className="mt-5 text-sm text-red-400">{error}</p>}
+          {error && (
+            <div className="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3.5 text-xs text-red-300">
+              {error}
+            </div>
+          )}
 
           {loading && (
             <div className="mt-12 text-center text-zinc-500">
