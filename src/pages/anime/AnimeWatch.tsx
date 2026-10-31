@@ -35,9 +35,9 @@ function recordWatchHistory(payload: {
     const prevWatched = Array.isArray(existing?.watchedEpisodes)
       ? existing!.watchedEpisodes!
       : [];
-    const watchedEpisodes = Array.from(new Set([...prevWatched, payload.episode])).sort(
-      (a, b) => a - b
-    );
+    const watchedEpisodes = Array.from(
+      new Set([...prevWatched, payload.episode])
+    ).sort((a, b) => a - b);
 
     const updatedItem: WatchHistoryItem = {
       slug: payload.slug,
@@ -85,15 +85,6 @@ async function safeFetchJson(url: string) {
   return result;
 }
 
-const DEFAULT_SERVERS = [
-  { id: '2', label: 'Kai Fast' },
-  { id: '1', label: 'Kai HD' },
-  { id: '3', label: 'Kai Backup' },
-  { id: 'mirror1', label: 'VidSrc Pro' },
-  { id: 'mirror2', label: 'VidLink HD' },
-  { id: 'mirror3', label: '2Embed' },
-];
-
 export default function AnimeWatch() {
   const { slug, episode } = useParams();
   const navigate = useNavigate();
@@ -121,23 +112,22 @@ export default function AnimeWatch() {
         const data = result.data;
         setStreamData(data);
 
-        if (data?.server && data.server !== server) {
-          setServer(String(data.server));
-        }
-
         if (data?.slug || slug) {
           const watched = recordWatchHistory({
             slug: data?.slug || slug || '',
             title: data?.title || slug || 'Anime',
             poster: data?.poster,
             episode: currentEp,
-            totalEpisodes: data?.total_episodes || data?.episodes_list?.length || 0,
+            totalEpisodes:
+              data?.total_episodes || data?.episodes_list?.length || 0,
             format: data?.format,
           });
           setWatchedEpisodes(watched);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Terjadi kendala streaming.');
+        setError(
+          err instanceof Error ? err.message : 'Terjadi kendala streaming.'
+        );
       } finally {
         setLoading(false);
       }
@@ -153,17 +143,19 @@ export default function AnimeWatch() {
   const hasPrev = currentEp > 1;
   const hasNext = totalEpisodes === 0 || currentEp < totalEpisodes;
 
-  const serverOptions = Array.isArray(streamData?.player_options?.servers)
-    ? streamData.player_options.servers.map((s: any) =>
-        typeof s === 'string' ? { id: s, label: `Server ${s}` } : s
-      )
-    : DEFAULT_SERVERS;
+  const availableServers: string[] =
+    Array.isArray(streamData?.player_options?.servers) &&
+    streamData.player_options.servers.length > 0
+      ? streamData.player_options.servers.map((s: any) =>
+          typeof s === 'string' ? s : s.id
+        )
+      : ['1', '2', '3'];
 
-  function switchToNextBackupServer() {
-    const order = ['mirror1', 'mirror2', 'mirror3', '2', '1', '3'];
-    const nextIdx = (order.indexOf(server) + 1) % order.length;
-    setServer(order[nextIdx]);
-  }
+  const availableAudios: string[] =
+    Array.isArray(streamData?.player_options?.audios) &&
+    streamData.player_options.audios.length > 0
+      ? streamData.player_options.audios
+      : ['sub', 'dub'];
 
   return (
     <Shell>
@@ -173,10 +165,10 @@ export default function AnimeWatch() {
             theaterMode ? 'max-w-[1440px]' : 'max-w-6xl'
           }`}
         >
-          {/* Bar Navigasi Atas */}
+          {/* Navigasi Atas */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Link
-              to={`/anime/${encodeURIComponent(slug || '')}`}
+              to={`/anime/${encodeURIComponent(streamData?.slug || slug || '')}`}
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
             >
               <ArrowLeft size={14} /> Detail Anime
@@ -188,7 +180,11 @@ export default function AnimeWatch() {
                 onClick={() => setTheaterMode((v) => !v)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
               >
-                {theaterMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {theaterMode ? (
+                  <Minimize2 size={13} />
+                ) : (
+                  <Maximize2 size={13} />
+                )}
                 {theaterMode ? 'Mode Normal' : 'Mode Bioskop'}
               </button>
 
@@ -205,12 +201,12 @@ export default function AnimeWatch() {
             </h1>
             {streamData?.episode_info?.title && (
               <p className="mt-0.5 text-xs text-zinc-400">
-                {streamData.episode_info.title}
+                Episode {currentEp} — {streamData.episode_info.title}
               </p>
             )}
           </div>
 
-          {/* Layout Utama: Player + Sidebar Daftar Episode */}
+          {/* Layout Utama: Video Player + Sidebar Daftar Episode */}
           <div
             className={`mt-4 grid grid-cols-1 gap-5 ${
               theaterMode ? 'lg:grid-cols-1' : 'lg:grid-cols-12'
@@ -222,35 +218,44 @@ export default function AnimeWatch() {
                 <div className="relative aspect-video w-full bg-black">
                   {loading ? (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-3">
-                      <Loader2 size={34} className="animate-spin text-rose-500" />
+                      <Loader2
+                        size={34}
+                        className="animate-spin text-rose-500"
+                      />
                       <p className="text-xs text-zinc-400">
-                        Menyiapkan stream episode {currentEp}...
+                        Menghubungkan stream server {server}...
                       </p>
                     </div>
                   ) : error ? (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
-                      <p className="text-sm font-semibold text-red-400">{error}</p>
+                      <p className="text-sm font-semibold text-red-400">
+                        {error}
+                      </p>
                       <button
                         type="button"
-                        onClick={switchToNextBackupServer}
+                        onClick={() =>
+                          setServer((prev) =>
+                            prev === '2' ? '1' : prev === '1' ? '3' : '2'
+                          )
+                        }
                         className="inline-flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-black transition hover:bg-rose-400"
                       >
-                        <RotateCcw size={14} /> Beralih ke Server Cadangan
+                        <RotateCcw size={14} /> Coba Server Lain
                       </button>
                     </div>
                   ) : streamData?.stream_url ? (
+                    /* PENTING: Tanpa referrerPolicy="no-referrer" agar play.anikai.org berjalan normal 1:1 */
                     <iframe
-                      key={`${streamData.stream_url}-${server}-${audio}`}
+                      key={streamData.stream_url}
                       src={streamData.stream_url}
                       title={`${streamData.title} Episode ${currentEp}`}
-                      referrerPolicy="no-referrer"
                       allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                       allowFullScreen
                       className="h-full w-full border-0"
                     />
                   ) : (
                     <div className="grid h-full place-items-center text-xs text-zinc-500">
-                      Stream tidak tersedia pada server ini. Silakan pilih server lain di bawah.
+                      Player tidak dapat dimuat.
                     </div>
                   )}
                 </div>
@@ -258,26 +263,56 @@ export default function AnimeWatch() {
                 {/* Kontrol Bar Server, Audio, dan Navigasi Episode */}
                 <div className="border-t border-white/[0.08] bg-[#0b0b11] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    {/* Pilihan Audio Sub / Dub */}
-                    <div className="flex items-center gap-1.5">
-                      <Volume2 size={14} className="text-zinc-400" />
-                      <span className="text-[11px] font-medium text-zinc-400">
-                        Audio:
-                      </span>
-                      {(['sub', 'dub'] as const).map((aud) => (
-                        <button
-                          key={aud}
-                          type="button"
-                          onClick={() => setAudio(aud)}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-bold uppercase transition ${
-                            audio === aud
-                              ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-black'
-                              : 'border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
-                          }`}
-                        >
-                          {aud}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-4">
+                      {/* Pilihan Server AnimeKai (1, 2, 3) */}
+                      <div className="flex items-center gap-1.5">
+                        <Server size={14} className="text-rose-400" />
+                        <span className="text-[11px] font-semibold text-zinc-400">
+                          Server:
+                        </span>
+                        {availableServers.map((srv) => (
+                          <button
+                            key={srv}
+                            type="button"
+                            onClick={() => setServer(String(srv))}
+                            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                              String(server) === String(srv)
+                                ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-black shadow-sm'
+                                : 'border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'
+                            }`}
+                          >
+                            Server {srv}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Pilihan Audio (SUB / DUB) */}
+                      <div className="flex items-center gap-1.5">
+                        <Volume2 size={14} className="text-zinc-400" />
+                        <span className="text-[11px] font-medium text-zinc-400">
+                          Audio:
+                        </span>
+                        {availableAudios.map((aud) => (
+                          <button
+                            key={aud}
+                            type="button"
+                            onClick={() =>
+                              setAudio(
+                                String(aud).toLowerCase() === 'dub'
+                                  ? 'dub'
+                                  : 'sub'
+                              )
+                            }
+                            className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase transition ${
+                              audio === String(aud).toLowerCase()
+                                ? 'border border-rose-400/50 bg-rose-500/20 text-rose-200'
+                                : 'border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
+                            }`}
+                          >
+                            {aud}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Tombol Prev / Next Episode */}
@@ -287,12 +322,12 @@ export default function AnimeWatch() {
                         disabled={!hasPrev}
                         onClick={() =>
                           navigate(
-                            `/anime/watch/${encodeURIComponent(slug || '')}/${currentEp - 1}`
+                            `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp - 1}`
                           )
                         }
                         className="inline-flex min-h-[36px] items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <ChevronLeft size={14} /> Ep Sebelumnya
+                        <ChevronLeft size={14} /> Prev
                       </button>
 
                       <button
@@ -300,105 +335,88 @@ export default function AnimeWatch() {
                         disabled={!hasNext}
                         onClick={() =>
                           navigate(
-                            `/anime/watch/${encodeURIComponent(slug || '')}/${currentEp + 1}`
+                            `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp + 1}`
                           )
                         }
                         className="inline-flex min-h-[36px] items-center gap-1 rounded-xl bg-white px-3.5 text-xs font-bold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        Ep Berikutnya <ChevronRight size={14} />
+                        Next <ChevronRight size={14} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Baris Pilihan Multi-Server */}
-                  <div className="mt-4 border-t border-white/[0.06] pt-3.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400">
-                        <Server size={13} className="text-rose-400" />
-                        Pilih Server Stream:
+                  {streamData?.stream_url && (
+                    <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[11px] text-zinc-500">
+                      <span>
+                        Jika satu server tidak tersedia, silakan klik Server 1, 2,
+                        atau 3.
                       </span>
-
-                      {serverOptions.map((srv: { id: string; label: string }) => (
-                        <button
-                          key={srv.id}
-                          type="button"
-                          onClick={() => setServer(srv.id)}
-                          className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                            server === srv.id
-                              ? 'border border-rose-400/50 bg-rose-500/20 text-rose-200 shadow-sm'
-                              : 'border border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white'
-                          }`}
-                        >
-                          {srv.label}
-                        </button>
-                      ))}
-
-                      {streamData?.stream_url && (
-                        <a
-                          href={streamData.stream_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400 hover:text-rose-300"
-                        >
-                          Buka Player di Tab Baru
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
+                      <a
+                        href={streamData.stream_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-zinc-400 hover:text-rose-300"
+                      >
+                        Buka Langsung Player
+                        <ExternalLink size={12} />
+                      </a>
                     </div>
-                    <p className="mt-2 text-[11px] text-zinc-500">
-                      Tips: Jika layar hitam atau loading lama, klik{' '}
-                      <strong className="text-zinc-300">VidSrc Pro</strong> atau{' '}
-                      <strong className="text-zinc-300">VidLink HD</strong> untuk beralih ke
-                      mirror cadangan.
-                    </p>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Sidebar Daftar Episode Interaktif */}
+            {/* Sidebar Daftar Episode */}
             <div className={theaterMode ? 'col-span-1' : 'lg:col-span-4'}>
-              <div className="flex h-full max-h-[540px] flex-col rounded-[24px] border border-white/[0.08] bg-[#0c0c12] p-4 sm:p-5">
+              <div className="flex h-full max-h-[520px] flex-col rounded-[24px] border border-white/[0.08] bg-[#0c0c12] p-4 sm:p-5">
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                   <div>
-                    <h2 className="text-sm font-bold text-white">Daftar Episode</h2>
+                    <h2 className="text-sm font-bold text-white">
+                      Daftar Episode
+                    </h2>
                     <p className="text-[11px] text-zinc-500">
-                      {watchedEpisodes.length} dari {totalEpisodes || '?'} episode telah ditonton
+                      {watchedEpisodes.length} dari {totalEpisodes || '?'} episode
+                      telah ditonton
                     </p>
                   </div>
                   <Sparkles size={15} className="text-rose-400" />
                 </div>
 
                 <div className="mt-3.5 grid flex-1 grid-cols-4 gap-2 overflow-y-auto pr-1 sm:grid-cols-6 lg:grid-cols-4">
-                  {(streamData?.episodes_list || []).map((epItem: any, idx: number) => {
-                    const num = Number(epItem.episode || epItem || idx + 1);
-                    const isCurrent = num === currentEp;
-                    const isWatched = watchedEpisodes.includes(num);
+                  {(streamData?.episodes_list || []).map(
+                    (epItem: any, idx: number) => {
+                      const num = Number(epItem.episode || epItem || idx + 1);
+                      const isCurrent = num === currentEp;
+                      const isWatched = watchedEpisodes.includes(num);
 
-                    return (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() =>
-                          navigate(
-                            `/anime/watch/${encodeURIComponent(slug || '')}/${num}`
-                          )
-                        }
-                        className={`flex items-center justify-center gap-1 rounded-xl border py-2.5 text-xs font-bold transition ${
-                          isCurrent
-                            ? 'border-rose-400 bg-gradient-to-r from-rose-500 to-amber-500 text-black shadow-md'
-                            : isWatched
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:border-rose-400/40'
-                              : 'border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:border-rose-500/40 hover:text-white'
-                        }`}
-                      >
-                        <span>{num}</span>
-                        {isWatched && !isCurrent && (
-                          <CheckCircle2 size={11} className="text-emerald-400" />
-                        )}
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${num}`
+                            )
+                          }
+                          className={`flex items-center justify-center gap-1 rounded-xl border py-2.5 text-xs font-bold transition ${
+                            isCurrent
+                              ? 'border-rose-400 bg-gradient-to-r from-rose-500 to-amber-500 text-black shadow-md'
+                              : isWatched
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:border-rose-400/40'
+                                : 'border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:border-rose-500/40 hover:text-white'
+                          }`}
+                        >
+                          <span>{num}</span>
+                          {isWatched && !isCurrent && (
+                            <CheckCircle2
+                              size={11}
+                              className="text-emerald-400"
+                            />
+                          )}
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
               </div>
             </div>
