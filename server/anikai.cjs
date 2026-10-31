@@ -11,8 +11,10 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 jam TTL
 
 let memoryCatalogCache = null;
 let memoryCacheTimestamp = 0;
-const externalIdCache = new Map();
 
+/**
+ * Lightweight native HTTP/HTTPS client (IPv4 forced, auto redirect, fast keepalive)
+ */
 function request(urlStr, options = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -27,14 +29,14 @@ function request(urlStr, options = {}) {
           family: 4,
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
             Referer: BASE_URL + "/",
             ...options.headers,
           },
-          timeout: options.timeout || 10000,
+          timeout: options.timeout || 15000,
         },
         (res) => {
           if (
@@ -65,7 +67,7 @@ function request(urlStr, options = {}) {
       );
       req.on("timeout", () => {
         req.destroy();
-        reject(new Error("AnimeKai Request Timeout"));
+        reject(new Error("AnimeKai Request Timeout (15s)"));
       });
 
       if (options.body) req.write(options.body);
@@ -76,53 +78,28 @@ function request(urlStr, options = {}) {
   });
 }
 
-function cleanAttrValue(val) {
+/**
+ * Bersihkan nilai atribut HTML dari tanda kutip (" atau ') yang tidak sengaja ikut terambil regex
+ */
+function stripQuotes(val) {
   if (!val) return "";
-  return String(val)
-    .trim()
-    .replace(/^['"]+|['"]+$/g, "")
-    .trim();
+  return String(val).trim().replace(/^['"]+|['"]+$/g, "").trim();
 }
 
-function extractHtmlAttr(html, attrName) {
-  if (!html) return "";
-  const regex = new RegExp(
-    `${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>"']+))`,
-    "i"
-  );
-  const match = html.match(regex);
-  if (!match) return "";
-  return cleanAttrValue(match[1] ?? match[2] ?? match[3] ?? "");
+/**
+ * Pastikan slug untuk /watch/ dan gambar selalu berformat slug-id (misal: one-piece-5773)
+ */
+function buildFullSlug(slug, id) {
+  const clean = String(slug || "").trim().replace(/^\/watch\/|\/$/g, "");
+  if (!id) return clean;
+  return clean.endsWith(`-${id}`) ? clean : `${clean}-${id}`;
 }
 
-function extractAllHtmlAttrs(html, attrName) {
-  if (!html) return [];
-  const regex = new RegExp(
-    `${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>"']+))`,
-    "gi"
-  );
-  const results = [];
-  for (const match of html.matchAll(regex)) {
-    const val = cleanAttrValue(match[1] ?? match[2] ?? match[3] ?? "");
-    if (val && !results.includes(val)) {
-      results.push(val);
-    }
-  }
-  return results;
-}
-
-function stripTrailingNumericId(slug, id) {
-  const s = String(slug || "").replace(/^\/watch\/|\/$/g, "");
-  if (id && s.endsWith(`-${id}`)) {
-    return s.slice(0, -String(`-${id}`).length);
-  }
-  return s.replace(/-\d{3,}$/, "");
-}
-
+/**
+ * Build image URLs helper
+ */
 function buildImages(slug, id) {
-  const cleanSlug = String(slug || "").replace(/^\/watch\/|\/$/g, "");
-  const fileKey =
-    id && !cleanSlug.endsWith(`-${id}`) ? `${cleanSlug}-${id}` : cleanSlug;
+  const fileKey = buildFullSlug(slug, id);
   return {
     poster: `${IMAGE_BASE_URL}/poster/w_360/h_480/${fileKey}.webp`,
     poster_sm: `${IMAGE_BASE_URL}/poster-sm/w_200/h_267/${fileKey}.webp`,
@@ -131,20 +108,25 @@ function buildImages(slug, id) {
   };
 }
 
+/**
+ * Normalisasi item anime dari catalog-index.json
+ */
 function formatAnimeItem(item) {
-  const slug = item.s || "";
+  const rawSlug = item.s || "";
   const id = item.i || null;
-  const imgs = buildImages(slug, id);
+  const fullSlug = buildFullSlug(rawSlug, id);
+  const imgs = buildImages(rawSlug, id);
 
   return {
     id: id,
-    slug: slug,
-    title: item.n || item.j || slug,
+    slug: fullSlug,
+    raw_slug: rawSlug,
+    title: item.n || item.j || fullSlug,
     title_english: item.n || null,
     title_romaji: item.j || null,
     title_kanji: item.na || null,
-    format: item.f || "TV",
-    status: item.st || "Released",
+    format: item.f || null,
+    status: item.st || null,
     genres: Array.isArray(item.g) ? item.g : [],
     year: item.y || null,
     rating: item.r || null,
@@ -158,10 +140,13 @@ function formatAnimeItem(item) {
     banner: imgs.banner,
     image: imgs.poster,
     images: imgs,
-    watch_url: `${BASE_URL}/watch/${slug}/`,
+    watch_url: `${BASE_URL}/watch/${fullSlug}/`,
   };
 }
 
+/**
+ * Fetch dan cache catalog-index.json (in-memory + /tmp)
+ */
 async function getCatalog(forceRefresh = false) {
   const now = Date.now();
 
@@ -202,78 +187,18 @@ async function getCatalog(forceRefresh = false) {
 }
 
 /**
- * Resolusi AniList ID & MyAnimeList ID agar server mirror (VidSrc / VidLink)
- * dapat memutar episode secara akurat.
+ * Search anime berdasarkan kata kunci dan filter opsional
  */
-async function resolveExternalIds(titleEn, titleRomaji, year) {
-  const searchTitle = String(titleRomaji || titleEn || "").trim();
-  if (!searchTitle) return { anilistId: null, malId: null };
-
-  const cacheKey = `${searchTitle.toLowerCase()}:${year || ""}`;
-  if (externalIdCache.has(cacheKey)) {
-    return externalIdCache.get(cacheKey);
-  }
-
-  try {
-    const query = `
-      query ($search: String) {
-        Media (search: $search, type: ANIME, sort: SEARCH_MATCH) {
-          id
-          idMal
-        }
-      }
-    `;
-
-    const body = JSON.stringify({
-      query,
-      variables: { search: searchTitle },
-    });
-
-    const res = await request("https://graphql.anilist.co", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body,
-      timeout: 3500,
-    });
-
-    if (res.status === 200) {
-      const parsed = res.json();
-      const media = parsed?.data?.Media;
-      if (media && (media.id || media.idMal)) {
-        const result = {
-          anilistId: media.id || null,
-          malId: media.idMal || null,
-        };
-        externalIdCache.set(cacheKey, result);
-        return result;
-      }
-    }
-  } catch {}
-
-  return { anilistId: null, malId: null };
-}
-
 async function searchAnime(query = "", options = {}) {
   const catalog = await getCatalog();
   const q = String(query || "").trim().toLowerCase();
   const limit = Math.max(1, parseInt(options.limit || 24, 10));
   const page = Math.max(1, parseInt(options.page || 1, 10));
-  const genreFilter = options.genre
-    ? String(options.genre).trim().toLowerCase()
-    : null;
-  const formatFilter = options.format
-    ? String(options.format).trim().toLowerCase()
-    : null;
-  const statusFilter = options.status
-    ? String(options.status).trim().toLowerCase()
-    : null;
+  const genreFilter = options.genre ? options.genre.toLowerCase() : null;
+  const formatFilter = options.format ? options.format.toLowerCase() : null;
+  const statusFilter = options.status ? options.status.toLowerCase() : null;
   const yearFilter = options.year ? parseInt(options.year, 10) : null;
-  const sortMode = options.sort
-    ? String(options.sort).trim().toLowerCase()
-    : "popular";
+  const sortMode = options.sort ? options.sort.toLowerCase() : "popular";
 
   const matches = [];
 
@@ -294,7 +219,7 @@ async function searchAnime(query = "", options = {}) {
 
     if (
       genreFilter &&
-      (!item.g || !item.g.some((g) => String(g).toLowerCase() === genreFilter))
+      (!item.g || !item.g.some((g) => g.toLowerCase() === genreFilter))
     ) {
       continue;
     }
@@ -304,7 +229,7 @@ async function searchAnime(query = "", options = {}) {
     if (statusFilter && (item.st || "").toLowerCase() !== statusFilter) {
       continue;
     }
-    if (yearFilter && !Number.isNaN(yearFilter) && item.y !== yearFilter) {
+    if (yearFilter && item.y !== yearFilter) {
       continue;
     }
 
@@ -315,7 +240,7 @@ async function searchAnime(query = "", options = {}) {
     matches.sort((a, b) => {
       const dateA = a.le || a.u || a.ca || "";
       const dateB = b.le || b.u || b.ca || "";
-      return String(dateB).localeCompare(String(dateA));
+      return dateB.localeCompare(dateA);
     });
   } else if (sortMode === "year") {
     matches.sort((a, b) => (b.y || 0) - (a.y || 0));
@@ -323,36 +248,86 @@ async function searchAnime(query = "", options = {}) {
     matches.sort((a, b) =>
       String(a.n || a.j || "").localeCompare(String(b.n || b.j || ""))
     );
-  } else {
+  } else if (!q) {
     matches.sort((a, b) => (b.sc || 0) - (a.sc || 0));
   }
 
   const totalResults = matches.length;
-  const totalPages = Math.ceil(totalResults / limit) || 1;
   const startIndex = (page - 1) * limit;
   const paginated = matches.slice(startIndex, startIndex + limit);
 
   return {
     status: true,
-    creator: "Kyno",
+    creator: "Vamz Spectre",
     query: q,
     page: page,
     limit: limit,
     total_results: totalResults,
-    total_pages: totalPages,
-    has_more: page < totalPages,
+    total_pages: Math.ceil(totalResults / limit) || 1,
     results: paginated.map(formatAnimeItem),
   };
 }
 
+/**
+ * Dapatkan anime terbaru (berdasarkan episode terbaru atau update date)
+ */
 async function getLatest(options = {}) {
-  return searchAnime("", { ...options, sort: "latest" });
+  const catalog = await getCatalog();
+  const limit = Math.max(1, parseInt(options.limit || 20, 10));
+  const page = Math.max(1, parseInt(options.page || 1, 10));
+
+  const sorted = [...catalog].sort((a, b) => {
+    const dateA = a.le || a.u || a.ca || "";
+    const dateB = b.le || b.u || b.ca || "";
+    return dateB.localeCompare(dateA);
+  });
+
+  const totalResults = sorted.length;
+  const startIndex = (page - 1) * limit;
+  const paginated = sorted.slice(startIndex, startIndex + limit);
+
+  return {
+    status: true,
+    creator: "Vamz Spectre",
+    type: "latest",
+    page: page,
+    limit: limit,
+    total_results: totalResults,
+    results: paginated.map(formatAnimeItem),
+  };
 }
 
+/**
+ * Dapatkan anime populer / top score
+ */
 async function getPopular(options = {}) {
-  return searchAnime("", { ...options, sort: "popular" });
+  const catalog = await getCatalog();
+  const limit = Math.max(1, parseInt(options.limit || 20, 10));
+  const page = Math.max(1, parseInt(options.page || 1, 10));
+
+  const filtered = catalog.filter(
+    (item) => typeof item.sc === "number" && item.sc > 0
+  );
+  filtered.sort((a, b) => (b.sc || 0) - (a.sc || 0));
+
+  const totalResults = filtered.length;
+  const startIndex = (page - 1) * limit;
+  const paginated = filtered.slice(startIndex, startIndex + limit);
+
+  return {
+    status: true,
+    creator: "Vamz Spectre",
+    type: "popular",
+    page: page,
+    limit: limit,
+    total_results: totalResults,
+    results: paginated.map(formatAnimeItem),
+  };
 }
 
+/**
+ * Ambil daftar episode anime dari /episodes/${animeId}.json
+ */
 async function getEpisodes(animeId) {
   if (!animeId) {
     throw new Error("Parameter animeId wajib diisi");
@@ -376,119 +351,115 @@ async function getEpisodes(animeId) {
 
   return {
     status: true,
-    creator: "Kyno",
+    creator: "Vamz Spectre",
     anime_id: parseInt(animeId, 10),
     total_episodes: episodes.length,
     episodes: episodes,
   };
 }
 
-function findEntryInCatalog(catalog, slugOrId) {
-  const raw = String(slugOrId || "").trim().replace(/^\/watch\/|\/$/g, "");
-  const numericId = parseInt(raw, 10);
+/**
+ * Cari item di catalog berdasarkan ID angka, slug murni, atau slug-id (contoh: one-piece-5773)
+ */
+function findInCatalog(catalog, slugOrId) {
+  const cleanInput = String(slugOrId || "")
+    .trim()
+    .replace(/^\/watch\/|\/$/g, "");
+  const numericId = parseInt(cleanInput, 10);
 
-  if (!Number.isNaN(numericId) && String(numericId) === raw) {
+  if (!isNaN(numericId) && String(numericId) === cleanInput) {
     return catalog.find((item) => item.i === numericId) || null;
   }
 
-  const lower = raw.toLowerCase();
-  let found = catalog.find(
-    (item) =>
-      String(item.s || "").toLowerCase() === lower ||
-      `${String(item.s || "").toLowerCase()}-${item.i}` === lower
-  );
+  const lower = cleanInput.toLowerCase();
+  let match = catalog.find((item) => {
+    const s = String(item.s || "").toLowerCase();
+    return s === lower || `${s}-${item.i}` === lower;
+  });
 
-  if (!found) {
-    const trailingIdMatch = lower.match(/-(\d+)$/);
-    if (trailingIdMatch) {
-      const extractedId = parseInt(trailingIdMatch[1], 10);
-      found = catalog.find((item) => item.i === extractedId);
+  if (!match) {
+    const idSuffix = lower.match(/-(\d+)$/);
+    if (idSuffix) {
+      const targetId = parseInt(idSuffix[1], 10);
+      match = catalog.find((item) => item.i === targetId) || null;
     }
   }
 
-  return found || null;
+  return match;
 }
 
+/**
+ * Dapatkan detail lengkap anime: metadata + synopsis + watch info + full episodes list
+ */
 async function getDetail(slugOrId) {
   if (!slugOrId) {
     throw new Error("Parameter slug atau animeId wajib diisi");
   }
 
   const catalog = await getCatalog();
-  const animeEntry = findEntryInCatalog(catalog, slugOrId);
+  const animeEntry = findInCatalog(catalog, slugOrId);
 
-  const candidateSlugs = [];
-  if (animeEntry && animeEntry.s) {
-    candidateSlugs.push(animeEntry.s);
-    if (animeEntry.i && !animeEntry.s.endsWith(`-${animeEntry.i}`)) {
-      candidateSlugs.push(`${animeEntry.s}-${animeEntry.i}`);
-    }
-  }
-  const cleanInputSlug = String(slugOrId)
+  const cleanInput = String(slugOrId)
     .trim()
     .replace(/^\/watch\/|\/$/g, "");
-  if (!candidateSlugs.includes(cleanInputSlug)) {
-    candidateSlugs.push(cleanInputSlug);
+
+  // Buat kandidat URL /watch/ (prioritaskan format dengan -id seperti one-piece-5773)
+  const slugCandidates = [];
+  if (animeEntry) {
+    const withId = buildFullSlug(animeEntry.s, animeEntry.i);
+    slugCandidates.push(withId);
+    if (animeEntry.s && animeEntry.s !== withId) {
+      slugCandidates.push(animeEntry.s);
+    }
+  }
+  if (!slugCandidates.includes(cleanInput)) {
+    slugCandidates.push(cleanInput);
   }
 
   let watchPageRes = null;
-  let activeSlug = candidateSlugs[0];
+  let resolvedSlug = slugCandidates[0];
 
-  for (const s of candidateSlugs) {
-    try {
-      const res = await request(`${BASE_URL}/watch/${s}/`);
-      if (res.status === 200 && res.body) {
-        watchPageRes = res;
-        activeSlug = s;
-        break;
-      }
-    } catch {}
-  }
-
-  const html = watchPageRes ? watchPageRes.body : "";
-
-  const dataId = extractHtmlAttr(html, "data-id");
-  let dataSeal = extractHtmlAttr(html, "data-seal");
-  const dataPlayer = (
-    extractHtmlAttr(html, "data-player") || "https://play.anikai.org"
-  ).replace(/\/+$/, "");
-  const dataServerDefault =
-    extractHtmlAttr(html, "data-server-default") || "2";
-
-  // Tangkap URL iframe langsung jika ada di dalam HTML watch page
-  const directIframeMatch = html.match(
-    /<iframe[^>]+src=["']?(https?:\/\/[^"'\s>]*play\.anikai\.org[^"'\s>]*)["'\s>]/i
-  );
-  const directIframeUrl = directIframeMatch ? directIframeMatch[1] : "";
-
-  if (!dataSeal && directIframeUrl) {
-    const hashMatch = directIframeUrl.match(/#([^.]+)\./);
-    if (hashMatch) dataSeal = hashMatch[1];
-  }
-
-  if (!dataSeal && html) {
-    const scriptSealMatch =
-      html.match(/data-seal=([^\s>"']+)/i) ||
-      html.match(/["']?seal["']?\s*:\s*["']([^"']+)["']/i) ||
-      html.match(/watch#([a-zA-Z0-9+/=_-]+)\.\d+\./i);
-    if (scriptSealMatch) {
-      dataSeal = cleanAttrValue(scriptSealMatch[1]);
+  for (const candidate of slugCandidates) {
+    const res = await request(`${BASE_URL}/watch/${candidate}/`);
+    if (res.status === 200) {
+      watchPageRes = res;
+      resolvedSlug = candidate;
+      break;
     }
   }
 
-  const availableServers = extractAllHtmlAttrs(html, "data-server");
-  const availableAudios = extractAllHtmlAttrs(html, "data-audio");
+  if (!watchPageRes || watchPageRes.status !== 200) {
+    throw new Error(
+      `Halaman anime tidak ditemukan untuk slug "${resolvedSlug}"`
+    );
+  }
 
-  const synopsisMatch = html.match(
-    /<p[^>]*id=["']?synopsis-text["']?[^>]*>([\s\S]*?)<\/p>/i
-  );
+  const html = watchPageRes.body;
+
+  // Gunakan regex 1:1 asli Vamz Spectre + stripQuotes agar bebas dari tanda kutip (" / ')
+  const dataId = stripQuotes((html.match(/data-id=([^\s>]+)/) || [])[1]);
+  const dataSeal = stripQuotes((html.match(/data-seal=([^\s>]+)/) || [])[1]);
+  const dataPlayer =
+    stripQuotes((html.match(/data-player=([^\s>]+)/) || [])[1]).replace(
+      /\/+$/,
+      ""
+    ) || "https://play.anikai.org";
+  const dataServerDefault =
+    stripQuotes((html.match(/data-server-default=([^\s>]+)/) || [])[1]) || "2";
+
+  const rawServers = [...html.matchAll(/data-server=([^\s>]+)/g)]
+    .map((m) => stripQuotes(m[1]))
+    .filter(Boolean);
+  const availableServers = [...new Set(rawServers)];
+
+  const rawAudios = [...html.matchAll(/data-audio=([^\s>]+)/g)]
+    .map((m) => stripQuotes(m[1]))
+    .filter(Boolean);
+  const availableAudios = [...new Set(rawAudios)];
+
+  const synopsisMatch = html.match(/<p id=synopsis-text[^>]*>([\s\S]*?)<\/p>/i);
   const synopsis = synopsisMatch
-    ? synopsisMatch[1]
-        .replace(/<[^>]+>/g, "")
-        .replace(/&quot;/g, '"')
-        .replace(/&#039;/g, "'")
-        .replace(/&amp;/g, "&")
-        .trim()
+    ? synopsisMatch[1].replace(/<[^>]+>/g, "").trim()
     : null;
 
   const id =
@@ -506,52 +477,34 @@ async function getDetail(slugOrId) {
     } catch {}
   }
 
-  const totalExpected =
-    animeEntry && typeof animeEntry.tt === "number" && animeEntry.tt > 0
-      ? animeEntry.tt
-      : 12;
-
-  if (episodesData.length === 0) {
-    episodesData = Array.from({ length: totalExpected }, (_, i) => ({
-      episode: i + 1,
-      title: `Episode ${i + 1}`,
-      release_date: null,
-      is_filler: false,
-      is_recap: false,
-    }));
-  }
-
-  const canonicalSlug = animeEntry ? animeEntry.s : activeSlug;
-  const imgs = buildImages(canonicalSlug, id || 0);
+  const imgs = buildImages(resolvedSlug, id || 0);
   const baseFormatted = animeEntry
     ? formatAnimeItem(animeEntry)
     : {
         id: id,
-        slug: canonicalSlug,
+        slug: resolvedSlug,
         title:
-          (html.match(/<title>([^<]+)<\/title>/i) || [])[1]
-            ?.replace(/\s*\|\s*AnimeKai.*$/i, "")
-            .trim() || canonicalSlug,
-        format: "TV",
-        status: "Released",
-        genres: [],
+          (html.match(/<title>([^<]+)<\/title>/) || [])[1]
+            ?.replace(/\s*\|\s*AnimeKai.*$/, "")
+            .trim() || resolvedSlug,
         poster: imgs.poster,
         poster_sm: imgs.poster_sm,
         banner: imgs.banner,
         image: imgs.poster,
         images: imgs,
-        watch_url: `${BASE_URL}/watch/${canonicalSlug}/`,
+        watch_url: `${BASE_URL}/watch/${resolvedSlug}/`,
       };
 
+  // Rekomendasi berdasarkan genre yang sama
   let recommendations = [];
   if (Array.isArray(baseFormatted.genres) && baseFormatted.genres.length > 0) {
-    const primaryGenre = baseFormatted.genres[0].toLowerCase();
+    const mainGenre = baseFormatted.genres[0].toLowerCase();
     recommendations = catalog
       .filter(
         (item) =>
-          item.s !== canonicalSlug &&
+          item.i !== id &&
           Array.isArray(item.g) &&
-          item.g.some((g) => String(g).toLowerCase() === primaryGenre)
+          item.g.some((g) => g.toLowerCase() === mainGenre)
       )
       .sort((a, b) => (b.sc || 0) - (a.sc || 0))
       .slice(0, 8)
@@ -560,17 +513,13 @@ async function getDetail(slugOrId) {
 
   return {
     status: true,
-    creator: "Kyno",
+    creator: "Vamz Spectre",
     data: {
       ...baseFormatted,
-      poster: baseFormatted.poster || imgs.poster,
-      image: baseFormatted.image || imgs.poster,
-      banner: baseFormatted.banner || imgs.banner,
       synopsis: synopsis,
       player: {
         player_host: dataPlayer,
         seal: dataSeal || null,
-        direct_iframe: directIframeUrl || null,
         server_default: dataServerDefault,
         available_servers:
           availableServers.length > 0 ? availableServers : ["1", "2", "3"],
@@ -578,14 +527,13 @@ async function getDetail(slugOrId) {
           availableAudios.length > 0 ? availableAudios : ["sub", "dub"],
       },
       episodes: episodesData,
-      recommendations,
+      recommendations: recommendations,
     },
   };
 }
 
 /**
- * Multi-Engine Stream Resolver:
- * Mendukung Server AnimeKai (1, 2, 3) + VidSrc Pro (AniList ID) + VidLink (MAL ID) + 2Embed
+ * Resolve direct video player URL dan iframe embed (1:1 Asli Vamz Spectre)
  */
 async function getStream(
   slugOrId,
@@ -597,110 +545,55 @@ async function getStream(
     throw new Error("Parameter slug atau animeId wajib diisi");
   }
 
-  const ep = Math.max(1, parseInt(episodeNumber || 1, 10));
+  const ep = parseInt(episodeNumber || 1, 10);
   const detailRes = await getDetail(slugOrId);
   const anime = detailRes.data;
 
+  if (!anime.player || !anime.player.seal) {
+    throw new Error(
+      "Video player seal tidak tersedia untuk judul ini (kemungkinan masih preview)"
+    );
+  }
+
+  const selectedServer = stripQuotes(
+    server ? String(server) : anime.player.server_default || "2"
+  );
   const selectedAudio =
     audio && String(audio).toLowerCase() === "dub" ? "dub" : "sub";
   const playerHost = (
-    anime.player?.player_host || "https://play.anikai.org"
+    anime.player.player_host || "https://play.anikai.org"
   ).replace(/\/+$/, "");
-  const seal = anime.player?.seal || "";
 
-  // Ambil AniList ID & MAL ID untuk server mirror
-  const extIds = await resolveExternalIds(
-    anime.title_english || anime.title,
-    anime.title_romaji,
-    anime.year
-  );
+  const streamHash = `${anime.player.seal}.${ep}.${selectedServer}.${selectedAudio}`;
+  const streamUrl = `${playerHost}/watch#${streamHash}`;
+  const iframeHtml = `<iframe src="${streamUrl}" title="${anime.title} Episode ${ep}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" width="100%" height="100%"></iframe>`;
 
-  const cleanSlugNoId = stripTrailingNumericId(anime.slug, anime.id);
-
-  // Tentukan server aktif: jika seal kosong, otomatis gunakan mirror1 (VidSrc Pro)
-  let selectedServer = cleanAttrValue(
-    server ? String(server) : anime.player?.server_default || "2"
-  );
-  if (!seal && ["1", "2", "3"].includes(selectedServer)) {
-    selectedServer = "mirror1";
-  }
-
-  let streamUrl = "";
-
-  if (selectedServer === "mirror1") {
-    if (extIds.anilistId) {
-      streamUrl = `https://vidsrc.cc/v2/embed/anime/ani${extIds.anilistId}/${ep}/${selectedAudio}`;
-    } else if (extIds.malId) {
-      streamUrl = `https://vidsrc.cc/v2/embed/anime/${extIds.malId}/${ep}/${selectedAudio}`;
-    } else {
-      streamUrl = `https://www.2embed.cc/embedanime/${encodeURIComponent(cleanSlugNoId)}-episode-${ep}`;
-    }
-  } else if (selectedServer === "mirror2") {
-    if (extIds.malId) {
-      streamUrl = `https://vidlink.pro/anime/${extIds.malId}/${ep}/${selectedAudio}?fallback=true`;
-    } else if (extIds.anilistId) {
-      streamUrl = `https://vidsrc.icu/embed/anime/${extIds.anilistId}/${ep}/${selectedAudio === "dub" ? 1 : 0}`;
-    } else {
-      streamUrl = `https://www.2embed.cc/embedanime/${encodeURIComponent(cleanSlugNoId)}-episode-${ep}`;
-    }
-  } else if (selectedServer === "mirror3") {
-    streamUrl = `https://www.2embed.cc/embedanime/${encodeURIComponent(cleanSlugNoId)}-episode-${ep}`;
-  } else if (seal) {
-    const srvNum = ["1", "2", "3"].includes(selectedServer)
-      ? selectedServer
-      : "2";
-    const streamHash = `${seal}.${ep}.${srvNum}.${selectedAudio}`;
-    streamUrl = `${playerHost}/watch#${streamHash}`;
-  } else if (anime.player?.direct_iframe) {
-    streamUrl = anime.player.direct_iframe;
-  } else {
-    streamUrl = `https://www.2embed.cc/embedanime/${encodeURIComponent(cleanSlugNoId)}-episode-${ep}`;
-  }
-
-  const iframeHtml = `<iframe src="${streamUrl}" title="${anime.title} Episode ${ep}" referrerpolicy="no-referrer" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" width="100%" height="100%"></iframe>`;
-
-  const episodeItem = anime.episodes?.find((e) => Number(e.episode) === ep) || {
-    episode: ep,
-    title: `Episode ${ep}`,
-  };
+  const episodeItem =
+    anime.episodes.find((e) => Number(e.episode) === ep) || null;
 
   return {
     status: true,
-    creator: "Kyno",
+    creator: "Vamz Spectre",
     data: {
       anime_id: anime.id,
-      anilist_id: extIds.anilistId,
-      mal_id: extIds.malId,
       slug: anime.slug,
       title: anime.title,
-      title_romaji: anime.title_romaji,
       poster: anime.poster,
       banner: anime.banner,
       format: anime.format,
-      score: anime.score,
-      genres: anime.genres || [],
-      synopsis: anime.synopsis,
       episode: ep,
-      total_episodes: anime.episodes?.length || anime.episodes_total || 0,
+      total_episodes: anime.episodes.length || anime.episodes_total || 0,
       episode_info: episodeItem,
       server: selectedServer,
       audio: selectedAudio,
+      seal: anime.player.seal,
       stream_url: streamUrl,
-      external_watch_url: anime.watch_url,
       iframe_embed: iframeHtml,
       player_options: {
-        servers: [
-          { id: "2", label: "Kai Fast" },
-          { id: "1", label: "Kai HD" },
-          { id: "3", label: "Kai Backup" },
-          { id: "mirror1", label: "VidSrc Pro" },
-          { id: "mirror2", label: "VidLink HD" },
-          { id: "mirror3", label: "2Embed" },
-        ],
-        audios: ["sub", "dub"],
+        servers: anime.player.available_servers,
+        audios: anime.player.available_audios,
       },
-      episodes_list: anime.episodes || [],
-      recommendations: anime.recommendations || [],
+      episodes_list: anime.episodes,
     },
   };
 }
