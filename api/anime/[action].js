@@ -4,9 +4,16 @@ export const config = {
 };
 
 import { createRequire } from 'node:module';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const anime = require('../../server/anikai.cjs');
+
+let anime;
+try {
+  anime = require('../../server/anikai.cjs');
+} catch {
+  anime = require(path.join(process.cwd(), 'server', 'anikai.cjs'));
+}
 
 function getParam(value, fallback = '') {
   if (Array.isArray(value)) return String(value[0] ?? fallback);
@@ -19,9 +26,28 @@ function getNumber(value, fallback, min, max) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function extractAction(req) {
+  const fromQuery = getParam(req.query?.action).trim().toLowerCase();
+  if (fromQuery && fromQuery !== '[action]') {
+    return fromQuery;
+  }
+
+  try {
+    const parsedUrl = new URL(req.url || '', 'http://localhost');
+    const segments = parsedUrl.pathname.split('/').filter(Boolean);
+    const animeIdx = segments.indexOf('anime');
+    if (animeIdx !== -1 && segments[animeIdx + 1]) {
+      return segments[animeIdx + 1].toLowerCase();
+    }
+  } catch {}
+
+  return '';
+}
+
 function send(res, status, data) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.status(status).json(data);
 }
 
@@ -35,29 +61,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const action = getParam(req.query.action).toLowerCase();
-    const page = getNumber(req.query.page, 1, 1, 10000);
-    const limit = getNumber(req.query.limit, 24, 1, 40);
+    const action = extractAction(req);
+    const page = getNumber(req.query?.page, 1, 1, 10000);
+    const limit = getNumber(req.query?.limit, 24, 1, 40);
 
     let result;
 
     switch (action) {
       case 'search': {
-        const query = getParam(req.query.q).trim();
+        const query = getParam(req.query?.q).trim();
         if (!query || query.length > 100) {
           return send(res, 400, {
             status: false,
-            error: 'Masukkan kata kunci pencarian.',
+            error: 'Masukkan kata kunci pencarian (maksimal 100 karakter).',
           });
         }
 
         result = await anime.searchAnime(query, {
           page,
           limit,
-          genre: getParam(req.query.genre),
-          format: getParam(req.query.format),
-          status: getParam(req.query.status),
-          year: getParam(req.query.year),
+          genre: getParam(req.query?.genre),
+          format: getParam(req.query?.format),
+          status: getParam(req.query?.status),
+          year: getParam(req.query?.year),
         });
         break;
       }
@@ -71,7 +97,7 @@ export default async function handler(req, res) {
         break;
 
       case 'detail': {
-        const slug = getParam(req.query.slug).trim();
+        const slug = getParam(req.query?.slug).trim();
         if (!slug || slug.length > 150) {
           return send(res, 400, {
             status: false,
@@ -83,7 +109,7 @@ export default async function handler(req, res) {
       }
 
       case 'episodes': {
-        const id = getParam(req.query.id).trim();
+        const id = getParam(req.query?.id).trim();
         if (!/^\d+$/.test(id)) {
           return send(res, 400, {
             status: false,
@@ -95,10 +121,10 @@ export default async function handler(req, res) {
       }
 
       case 'stream': {
-        const slug = getParam(req.query.slug).trim();
-        const episode = getNumber(req.query.episode, 1, 1, 100000);
-        const server = getParam(req.query.server, '');
-        const audio = getParam(req.query.audio, 'sub').toLowerCase();
+        const slug = getParam(req.query?.slug).trim();
+        const episode = getNumber(req.query?.episode, 1, 1, 100000);
+        const server = getParam(req.query?.server, '');
+        const audio = getParam(req.query?.audio, 'sub').toLowerCase();
 
         if (!slug || slug.length > 150) {
           return send(res, 400, {
@@ -119,7 +145,8 @@ export default async function handler(req, res) {
       default:
         return send(res, 404, {
           status: false,
-          error: 'Endpoint AnimeHub tidak ditemukan.',
+          error: `Endpoint AnimeHub (${action || 'kosong'}) tidak ditemukan.`,
+          available: ['search', 'latest', 'popular', 'detail', 'episodes', 'stream'],
         });
     }
 
