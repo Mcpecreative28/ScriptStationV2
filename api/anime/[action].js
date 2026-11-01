@@ -50,14 +50,13 @@ function send(res, status, data, noCache = false) {
     'Cache-Control',
     noCache
       ? 'no-store, max-age=0'
-      : 'public, s-maxage=60, stale-while-revalidate=300'
+      : 'public, s-maxage=120, stale-while-revalidate=600'
   );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.status(status).json(data);
 }
 
 export default async function handler(req, res) {
-  // Handle CORS Preflight jika dibutuhkan oleh player
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -76,11 +75,19 @@ export default async function handler(req, res) {
   try {
     const action = extractAction(req);
     const page = getNumber(req.query?.page, 1, 1, 10000);
-    const limit = getNumber(req.query?.limit, 24, 1, 48);
+    const limit = getNumber(req.query?.limit, 24, 1, 60);
 
     let result;
 
     switch (action) {
+      case 'filters':
+        result = await anime.getFilters();
+        return send(res, 200, result);
+
+      case 'schedule':
+        result = await anime.getSchedule();
+        return send(res, 200, result);
+
       case 'search': {
         const query = getParam(req.query?.q).trim();
         if (query.length > 100) {
@@ -97,6 +104,7 @@ export default async function handler(req, res) {
           format: getParam(req.query?.format),
           status: getParam(req.query?.status),
           year: getParam(req.query?.year),
+          letter: getParam(req.query?.letter),
           sort: getParam(req.query?.sort, 'popular'),
         });
         return send(res, 200, result);
@@ -159,7 +167,6 @@ export default async function handler(req, res) {
       case 'embed': {
         const proxyUrl = getParam(req.query?.proxy_url).trim();
 
-        // 1. Jika ini adalah panggilan sub-request dari script player (Fetch / XHR Interceptor)
         if (proxyUrl) {
           const bodyPayload =
             req.method === 'POST' && req.body
@@ -179,7 +186,6 @@ export default async function handler(req, res) {
           return res.status(proxied.status).send(proxied.buffer || proxied.body);
         }
 
-        // 2. Jika ini adalah panggilan HTML utama iframe player
         const hash = getParam(req.query?.hash).trim();
         const host = getParam(
           req.query?.host,
@@ -203,6 +209,8 @@ export default async function handler(req, res) {
           status: false,
           error: `Endpoint AnimeHub (${action || 'kosong'}) tidak ditemukan.`,
           available: [
+            'filters',
+            'schedule',
             'search',
             'latest',
             'popular',
