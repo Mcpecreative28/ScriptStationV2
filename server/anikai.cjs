@@ -7,7 +7,7 @@ const { URL } = require("url");
 const BASE_URL = "https://anikai.org";
 const IMAGE_BASE_URL = "https://img.anikai.org";
 const CACHE_FILE_PATH = path.join("/tmp", "anikai_catalog_cache.json");
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 jam TTL
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 let memoryCatalogCache = null;
 let memoryCacheTimestamp = 0;
@@ -26,7 +26,7 @@ function request(urlStr, options = {}) {
           family: 4,
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
@@ -112,8 +112,8 @@ function formatAnimeItem(item) {
     title_english: item.n || null,
     title_romaji: item.j || null,
     title_kanji: item.na || null,
-    format: item.f || null,
-    status: item.st || null,
+    format: item.f || "TV",
+    status: item.st || "Released",
     genres: Array.isArray(item.g) ? item.g : [],
     year: item.y || null,
     rating: item.r || null,
@@ -170,20 +170,148 @@ async function getCatalog(forceRefresh = false) {
   return catalog;
 }
 
+/**
+ * Ekstrak daftar seluruh Genre, Format, Status, dan Tahun langsung dari katalog AnimeKai
+ */
+async function getFilters() {
+  const catalog = await getCatalog();
+  const genreCounts = new Map();
+  const formatSet = new Set();
+  const statusSet = new Set();
+  const yearSet = new Set();
+
+  for (const item of catalog) {
+    if (Array.isArray(item.g)) {
+      for (const g of item.g) {
+        const clean = String(g || "").trim();
+        if (clean) {
+          genreCounts.set(clean, (genreCounts.get(clean) || 0) + 1);
+        }
+      }
+    }
+    if (item.f) formatSet.add(String(item.f).trim());
+    if (item.st) statusSet.add(String(item.st).trim());
+    if (typeof item.y === "number" && item.y >= 1970 && item.y <= 2030) {
+      yearSet.add(item.y);
+    }
+  }
+
+  const genres = Array.from(genreCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const formats = Array.from(formatSet).sort();
+  const statuses = Array.from(statusSet).sort();
+  const years = Array.from(yearSet).sort((a, b) => b - a);
+
+  return {
+    status: true,
+    total_catalog: catalog.length,
+    genres,
+    formats,
+    statuses,
+    years,
+  };
+}
+
+/**
+ * Jadwal Anime Mingguan (Dikelompokkan per hari Senin - Minggu dari data rilis aktif)
+ */
+async function getSchedule() {
+  const catalog = await getCatalog();
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+
+  const grouped = {
+    Monday: [],
+    Tuesday: [],
+    Wednesday: [],
+    Thursday: [],
+    Friday: [],
+    Saturday: [],
+    Sunday: [],
+  };
+
+  // Ambil anime yang sedang tayang (Airing / Ongoing) atau baru rilis
+  const candidates = catalog
+    .filter((item) => {
+      const st = String(item.st || "").toLowerCase();
+      return (
+        st.includes("airing") ||
+        st.includes("ongoing") ||
+        Boolean(item.le) ||
+        item.y >= 2025
+      );
+    })
+    .sort((a, b) => {
+      const dateA = a.le || a.u || "";
+      const dateB = b.le || b.u || "";
+      return String(dateB).localeCompare(String(dateA));
+    })
+    .slice(0, 140);
+
+  for (const item of candidates) {
+    const dateStr = item.le || item.rd || item.u;
+    let dayName = "Monday";
+    if (dateStr) {
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        dayName = days[parsedDate.getUTCDay()];
+      } else {
+        dayName = days[(item.i || 0) % 7];
+      }
+    } else {
+      dayName = days[(item.i || 0) % 7];
+    }
+
+    if (grouped[dayName].length < 24) {
+      grouped[dayName].push(formatAnimeItem(item));
+    }
+  }
+
+  return {
+    status: true,
+    schedule: grouped,
+  };
+}
+
+/**
+ * Search & Filter Katalog Lengkap (Mendukung A-Z, Z-A, Popular, Latest, Year, Score, Letter, Pagination)
+ */
 async function searchAnime(query = "", options = {}) {
   const catalog = await getCatalog();
   const q = String(query || "").trim().toLowerCase();
   const limit = Math.max(1, parseInt(options.limit || 24, 10));
   const page = Math.max(1, parseInt(options.page || 1, 10));
-  const genreFilter = options.genre ? options.genre.toLowerCase() : null;
-  const formatFilter = options.format ? options.format.toLowerCase() : null;
-  const statusFilter = options.status ? options.status.toLowerCase() : null;
+  const genreFilter = options.genre
+    ? String(options.genre).trim().toLowerCase()
+    : null;
+  const formatFilter = options.format
+    ? String(options.format).trim().toLowerCase()
+    : null;
+  const statusFilter = options.status
+    ? String(options.status).trim().toLowerCase()
+    : null;
   const yearFilter = options.year ? parseInt(options.year, 10) : null;
-  const sortMode = options.sort ? options.sort.toLowerCase() : "popular";
+  const letterFilter = options.letter
+    ? String(options.letter).trim().toUpperCase()
+    : null;
+  const sortMode = options.sort
+    ? String(options.sort).trim().toLowerCase()
+    : "popular";
 
   const matches = [];
 
   for (const item of catalog) {
+    const primaryTitle = String(item.n || item.j || item.s || "").trim();
+
     if (q) {
       const titleEn = (item.n || "").toLowerCase();
       const titleJp = (item.j || "").toLowerCase();
@@ -198,19 +326,29 @@ async function searchAnime(query = "", options = {}) {
       if (!isMatch) continue;
     }
 
+    if (letterFilter && letterFilter !== "ALL") {
+      const firstChar = primaryTitle.charAt(0).toUpperCase();
+      if (letterFilter === "0-9") {
+        if (!/^[0-9]/.test(firstChar)) continue;
+      } else if (firstChar !== letterFilter) {
+        continue;
+      }
+    }
+
     if (
       genreFilter &&
-      (!item.g || !item.g.some((g) => g.toLowerCase() === genreFilter))
+      (!item.g ||
+        !item.g.some((g) => String(g).toLowerCase() === genreFilter))
     ) {
       continue;
     }
-    if (formatFilter && (item.f || "").toLowerCase() !== formatFilter) {
+    if (formatFilter && String(item.f || "").toLowerCase() !== formatFilter) {
       continue;
     }
-    if (statusFilter && (item.st || "").toLowerCase() !== statusFilter) {
+    if (statusFilter && String(item.st || "").toLowerCase() !== statusFilter) {
       continue;
     }
-    if (yearFilter && item.y !== yearFilter) {
+    if (yearFilter && !isNaN(yearFilter) && item.y !== yearFilter) {
       continue;
     }
 
@@ -221,83 +359,49 @@ async function searchAnime(query = "", options = {}) {
     matches.sort((a, b) => {
       const dateA = a.le || a.u || a.ca || "";
       const dateB = b.le || b.u || b.ca || "";
-      return dateB.localeCompare(dateA);
+      return String(dateB).localeCompare(String(dateA));
     });
-  } else if (sortMode === "year") {
+  } else if (sortMode === "year" || sortMode === "newest") {
     matches.sort((a, b) => (b.y || 0) - (a.y || 0));
+  } else if (sortMode === "oldest") {
+    matches.sort((a, b) => (a.y || 9999) - (b.y || 9999));
   } else if (sortMode === "az") {
     matches.sort((a, b) =>
       String(a.n || a.j || "").localeCompare(String(b.n || b.j || ""))
     );
-  } else if (!q) {
+  } else if (sortMode === "za") {
+    matches.sort((a, b) =>
+      String(b.n || b.j || "").localeCompare(String(a.n || a.j || ""))
+    );
+  } else {
+    // Default: Most Popular / Highest Score
     matches.sort((a, b) => (b.sc || 0) - (a.sc || 0));
   }
 
   const totalResults = matches.length;
+  const totalPages = Math.ceil(totalResults / limit) || 1;
   const startIndex = (page - 1) * limit;
   const paginated = matches.slice(startIndex, startIndex + limit);
 
   return {
     status: true,
-    creator: "Vamz Spectre",
+    creator: "Kyno",
     query: q,
     page: page,
     limit: limit,
     total_results: totalResults,
-    total_pages: Math.ceil(totalResults / limit) || 1,
+    total_pages: totalPages,
+    has_more: page < totalPages,
     results: paginated.map(formatAnimeItem),
   };
 }
 
 async function getLatest(options = {}) {
-  const catalog = await getCatalog();
-  const limit = Math.max(1, parseInt(options.limit || 20, 10));
-  const page = Math.max(1, parseInt(options.page || 1, 10));
-
-  const sorted = [...catalog].sort((a, b) => {
-    const dateA = a.le || a.u || a.ca || "";
-    const dateB = b.le || b.u || b.ca || "";
-    return dateB.localeCompare(dateA);
-  });
-
-  const totalResults = sorted.length;
-  const startIndex = (page - 1) * limit;
-  const paginated = sorted.slice(startIndex, startIndex + limit);
-
-  return {
-    status: true,
-    creator: "Vamz Spectre",
-    type: "latest",
-    page: page,
-    limit: limit,
-    total_results: totalResults,
-    results: paginated.map(formatAnimeItem),
-  };
+  return searchAnime("", { ...options, sort: "latest" });
 }
 
 async function getPopular(options = {}) {
-  const catalog = await getCatalog();
-  const limit = Math.max(1, parseInt(options.limit || 20, 10));
-  const page = Math.max(1, parseInt(options.page || 1, 10));
-
-  const filtered = catalog.filter(
-    (item) => typeof item.sc === "number" && item.sc > 0
-  );
-  filtered.sort((a, b) => (b.sc || 0) - (a.sc || 0));
-
-  const totalResults = filtered.length;
-  const startIndex = (page - 1) * limit;
-  const paginated = filtered.slice(startIndex, startIndex + limit);
-
-  return {
-    status: true,
-    creator: "Vamz Spectre",
-    type: "popular",
-    page: page,
-    limit: limit,
-    total_results: totalResults,
-    results: paginated.map(formatAnimeItem),
-  };
+  return searchAnime("", { ...options, sort: "popular" });
 }
 
 async function getEpisodes(animeId) {
@@ -323,7 +427,7 @@ async function getEpisodes(animeId) {
 
   return {
     status: true,
-    creator: "Vamz Spectre",
+    creator: "Kyno",
     anime_id: parseInt(animeId, 10),
     total_episodes: episodes.length,
     episodes: episodes,
@@ -476,7 +580,7 @@ async function getDetail(slugOrId) {
 
   return {
     status: true,
-    creator: "Vamz Spectre",
+    creator: "Kyno",
     data: {
       ...baseFormatted,
       synopsis: synopsis,
@@ -537,7 +641,7 @@ async function getStream(
 
   return {
     status: true,
-    creator: "Vamz Spectre",
+    creator: "Kyno",
     data: {
       anime_id: anime.id,
       slug: anime.slug,
@@ -564,11 +668,6 @@ async function getStream(
   };
 }
 
-/**
- * Mengambil halaman HTML dari play.anikai.org/watch dan menyuntikkan
- * Fetch + XHR Proxy Interceptor agar request internal player tidak terkena blokir CORS
- * ("The player could not be reached.")!
- */
 async function fetchPlayerEmbedHtml(
   streamHash,
   playerHost = "https://play.anikai.org"
@@ -592,13 +691,11 @@ async function fetchPlayerEmbedHtml(
 
   let html = res.body;
 
-  // Hapus meta CSP bawaan jika ada
   html = html.replace(
     /<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi,
     ""
   );
 
-  // Ubah path aset relatif (/assets/..., /js/..., /css/...) menjadi URL absolut ke play.anikai.org
   html = html.replace(
     /\b(src|href)=(["'])\/(?!\/)/gi,
     `$1=$2${cleanHost}/`
@@ -611,7 +708,6 @@ async function fetchPlayerEmbedHtml(
         var PLAYER_HOST = ${JSON.stringify(cleanHost)};
         var TARGET_HASH = ${JSON.stringify(cleanHash)};
 
-        // 1. Pastikan hash episode terpasang sebelum script player dieksekusi
         try {
           if (TARGET_HASH && window.location.hash !== '#' + TARGET_HASH) {
             window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + TARGET_HASH);
@@ -620,7 +716,6 @@ async function fetchPlayerEmbedHtml(
           window.location.hash = '#' + TARGET_HASH;
         }
 
-        // Fungsi pembantu untuk mengubah URL internal player menjadi URL Proxy kita
         function rewriteToProxy(rawUrl) {
           try {
             if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
@@ -628,7 +723,6 @@ async function fetchPlayerEmbedHtml(
               return rawUrl;
             }
             var resolved = new URL(rawUrl, PLAYER_HOST + '/watch');
-            // Jika mengarah ke origin web kita sendiri (karena path relatif) atau ke anikai.org, belokkan ke proxy!
             if (
               resolved.origin === window.location.origin ||
               resolved.hostname.indexOf('anikai.org') !== -1
@@ -642,7 +736,6 @@ async function fetchPlayerEmbedHtml(
           }
         }
 
-        // 2. Intercept window.fetch agar tidak pernah gagal karena CORS ("The player could not be reached.")
         var originalFetch = window.fetch;
         if (originalFetch) {
           window.fetch = function(input, init) {
@@ -660,7 +753,6 @@ async function fetchPlayerEmbedHtml(
           };
         }
 
-        // 3. Intercept XMLHttpRequest
         var origOpen = XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open = function(method, url) {
           try {
@@ -683,10 +775,6 @@ async function fetchPlayerEmbedHtml(
   return html;
 }
 
-/**
- * Meneruskan request internal dari script player (fetch/XHR) ke play.anikai.org
- * lengkap dengan header Origin & Referer resmi anikai.org
- */
 async function proxyPlayerRequest(targetUrl, method = "GET", reqBody = null) {
   const parsed = new URL(targetUrl);
   if (!parsed.hostname.endsWith("anikai.org")) {
@@ -720,6 +808,8 @@ module.exports = {
   getEpisodes,
   getStream,
   getCatalog,
+  getFilters,
+  getSchedule,
   fetchPlayerEmbedHtml,
   proxyPlayerRequest,
 };
