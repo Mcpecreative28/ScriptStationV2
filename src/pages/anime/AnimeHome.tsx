@@ -301,7 +301,7 @@ export default function AnimeHome() {
         <div className="flex flex-col justify-between gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center">
           <div className="flex items-baseline gap-3">
             <span className="font-mono text-xs font-bold tracking-widest text-[#ff5522]">
-              ANIMEKAI // ARCHIVE
+              SCRIPTSTATION // STREAM
             </span>
             <span className="font-mono text-[11px] text-zinc-500">
               INDEXED STREAMING TERMINAL
@@ -633,7 +633,7 @@ export default function AnimeHome() {
                 <div>
                   <div className="flex items-baseline justify-between border-b border-white/15 pb-3">
                     <h2 className="text-base font-black uppercase tracking-tight text-white">
-                      Indeks Genre AnimeKai
+                      Indeks Genre SSSTREAM
                     </h2>
                     <span className="font-mono text-[10px] text-zinc-500">
                       {genres.length} KATEGORI
