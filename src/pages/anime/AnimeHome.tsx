@@ -2,17 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpRight,
-  CalendarDays,
+  Calendar,
   Clock,
   Compass,
-  Flame,
-  History,
-  Layers,
+  Disc,
   Play,
   Search,
   Star,
   Trash2,
-  Tv,
   X,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
@@ -59,19 +56,19 @@ export function readWatchHistory(): WatchHistoryItem[] {
 
 export function formatRelativeTime(timestamp: number): string {
   const diffSec = Math.floor((Date.now() - timestamp) / 1000);
-  if (diffSec < 60) return 'Baru saja';
+  if (diffSec < 60) return 'BARU SAJA';
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m lalu`;
+  if (diffMin < 60) return `${diffMin}M LALU`;
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}j lalu`;
+  if (diffHour < 24) return `${diffHour}J LALU`;
   const diffDay = Math.floor(diffHour / 24);
-  return `${diffDay}h lalu`;
+  return `${diffDay}H LALU`;
 }
 
 /**
- * Custom Sub-Navigation Bar pengganti Shell (Home, Katalog & Filter, Jadwal, Histori)
+ * Sub-Navbar Bawah (Flush / Menempel penuh di bawah layar, tidak mengambang, menggantikan Shell)
  */
-export function AnimeSubBar({
+export function AnimeBottomBar({
   activeTab,
   onSelectTab,
 }: {
@@ -80,14 +77,13 @@ export function AnimeSubBar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [quickQuery, setQuickQuery] = useState('');
   const [historyCount, setHistoryCount] = useState(0);
 
   useEffect(() => {
     setHistoryCount(readWatchHistory().length);
   }, [location.pathname, location.search]);
 
-  function handleTabClick(tab: 'home' | 'catalog' | 'schedule' | 'history') {
+  function handleNav(tab: 'home' | 'catalog' | 'schedule' | 'history') {
     if (tab === 'catalog') {
       navigate('/anime/search');
       return;
@@ -102,84 +98,73 @@ export function AnimeSubBar({
     }
   }
 
-  function handleQuickSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!quickQuery.trim()) {
-      navigate('/anime/search');
-      return;
-    }
-    navigate(`/anime/search?q=${encodeURIComponent(quickQuery.trim())}`);
-  }
-
-  const navItems = [
-    { id: 'home' as const, label: 'Overview', icon: Tv },
-    { id: 'catalog' as const, label: 'Katalog & Filter', icon: Compass },
-    { id: 'schedule' as const, label: 'Jadwal Rilis', icon: CalendarDays },
+  const items = [
+    { id: 'home' as const, code: '01', label: 'INDEX', sub: 'Beranda', icon: Disc },
+    { id: 'catalog' as const, code: '02', label: 'ARCHIVE', sub: 'Katalog & Filter', icon: Compass },
+    { id: 'schedule' as const, code: '03', label: 'SCHEDULE', sub: 'Jadwal Rilis', icon: Calendar },
     {
       id: 'history' as const,
-      label: 'Histori',
+      code: '04',
+      label: 'WATCHLOG',
+      sub: historyCount > 0 ? `${historyCount} Tersimpan` : 'Histori',
       icon: Clock,
-      badge: historyCount > 0 ? historyCount : undefined,
     },
   ];
 
   return (
-    <div className="sticky top-[68px] z-40 border-b border-white/[0.07] bg-[#08090c]/90 backdrop-blur-2xl sm:top-[76px]">
-      <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleTabClick(item.id)}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                  isActive
-                    ? 'border border-emerald-400/30 bg-emerald-400/15 text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
-                    : 'border border-transparent text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+    <nav
+      aria-label="Navigasi Anime"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/15 bg-[#070709]"
+    >
+      <div className="mx-auto grid max-w-[1440px] grid-cols-4 divide-x divide-white/10">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const active = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => handleNav(item.id)}
+              className={`group relative flex h-16 flex-col justify-between px-3 py-2.5 text-left transition sm:h-[68px] sm:px-5 ${
+                active
+                  ? 'bg-[#121217] text-white'
+                  : 'bg-[#070709] text-zinc-500 hover:bg-[#0d0d11] hover:text-zinc-200'
+              }`}
+            >
+              {/* Indikator garis tegas di atas tab aktif */}
+              <span
+                className={`absolute inset-x-0 top-0 h-[2px] transition-opacity ${
+                  active ? 'bg-[#ff5522] opacity-100' : 'opacity-0'
                 }`}
-              >
-                <Icon size={14} strokeWidth={1.8} />
-                <span>{item.label}</span>
-                {item.badge !== undefined && (
-                  <span className="rounded-md bg-emerald-400/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+              />
 
-        <form
-          onSubmit={handleQuickSearch}
-          className="hidden items-center gap-2 md:flex"
-        >
-          <div className="relative w-64">
-            <Search
-              size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
-            />
-            <input
-              type="text"
-              value={quickQuery}
-              onChange={(e) => setQuickQuery(e.target.value)}
-              placeholder="Cepat cari judul / karakter..."
-              className="h-9 w-full rounded-xl border border-white/[0.08] bg-[#0d0f14] pl-9 pr-3 text-xs text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/50"
-            />
-          </div>
-          <Link
-            to="/anime/search"
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:text-white"
-          >
-            Filter Lengkap
-            <ArrowUpRight size={13} />
-          </Link>
-        </form>
+              <div className="flex w-full items-center justify-between">
+                <span className="font-mono text-[10px] tracking-widest text-zinc-500">
+                  {item.code}
+                </span>
+                <Icon
+                  size={14}
+                  className={
+                    active
+                      ? 'text-[#ff5522]'
+                      : 'text-zinc-600 group-hover:text-zinc-300'
+                  }
+                />
+              </div>
+
+              <div className="flex items-baseline justify-between gap-2">
+                <span className=" truncate text-xs font-bold tracking-tight sm:text-sm">
+                  {item.label}
+                </span>
+                <span className="hidden truncate font-mono text-[10px] text-zinc-500 md:inline">
+                  {item.sub}
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -194,23 +179,25 @@ async function safeFetchJson(url: string) {
   }
 }
 
-const DAYS_ORDER = [
-  { key: 'Monday', label: 'Senin' },
-  { key: 'Tuesday', label: 'Selasa' },
-  { key: 'Wednesday', label: 'Rabu' },
-  { key: 'Thursday', label: 'Kamis' },
-  { key: 'Friday', label: 'Jumat' },
-  { key: 'Saturday', label: 'Sabtu' },
-  { key: 'Sunday', label: 'Minggu' },
+const DAYS_LIST = [
+  { key: 'Monday', short: 'MON', label: 'Senin' },
+  { key: 'Tuesday', short: 'TUE', label: 'Selasa' },
+  { key: 'Wednesday', short: 'WED', label: 'Rabu' },
+  { key: 'Thursday', short: 'THU', label: 'Kamis' },
+  { key: 'Friday', short: 'FRI', label: 'Jumat' },
+  { key: 'Saturday', short: 'SAT', label: 'Sabtu' },
+  { key: 'Sunday', short: 'SUN', label: 'Minggu' },
 ];
 
 export default function AnimeHome() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const initialTabParam = searchParams.get('tab');
+  const tabParam = searchParams.get('tab');
+
   const [activeTab, setActiveTab] = useState<'home' | 'schedule' | 'history'>(
-    initialTabParam === 'schedule'
+    tabParam === 'schedule'
       ? 'schedule'
-      : initialTabParam === 'history'
+      : tabParam === 'history'
         ? 'history'
         : 'home'
   );
@@ -220,7 +207,6 @@ export default function AnimeHome() {
   const [genres, setGenres] = useState<Array<{ name: string; count: number }>>([]);
   const [scheduleData, setScheduleData] = useState<Record<string, AnimeCard[]>>({});
   const [selectedDay, setSelectedDay] = useState<string>(() => {
-    const dayIndex = new Date().getDay();
     const map = [
       'Sunday',
       'Monday',
@@ -230,44 +216,40 @@ export default function AnimeHome() {
       'Friday',
       'Saturday',
     ];
-    return map[dayIndex] || 'Monday';
+    return map[new Date().getDay()] || 'Monday';
   });
 
   const [history, setHistory] = useState<WatchHistoryItem[]>([]);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t === 'schedule' || t === 'history') {
-      setActiveTab(t);
-    } else {
-      setActiveTab('home');
-    }
+    if (t === 'schedule' || t === 'history') setActiveTab(t);
+    else setActiveTab('home');
   }, [searchParams]);
 
   useEffect(() => {
     setHistory(readWatchHistory());
 
-    async function loadInitial() {
+    async function load() {
       setLoading(true);
       try {
-        const [popJson, latJson, filterJson] = await Promise.all([
+        const [popRes, latRes, fltRes] = await Promise.all([
           safeFetchJson('/api/anime/popular?limit=12'),
           safeFetchJson('/api/anime/latest?limit=18'),
           safeFetchJson('/api/anime/filters'),
         ]);
-
-        if (Array.isArray(popJson?.results)) setPopular(popJson.results);
-        if (Array.isArray(latJson?.results)) setLatest(latJson.results);
-        if (Array.isArray(filterJson?.genres)) setGenres(filterJson.genres);
+        if (Array.isArray(popRes?.results)) setPopular(popRes.results);
+        if (Array.isArray(latRes?.results)) setLatest(latRes.results);
+        if (Array.isArray(fltRes?.genres)) setGenres(fltRes.genres);
       } finally {
         setLoading(false);
       }
     }
-
-    loadInitial();
+    load();
   }, []);
 
   useEffect(() => {
@@ -281,7 +263,7 @@ export default function AnimeHome() {
     }
   }, [activeTab, scheduleData]);
 
-  function removeHistoryItem(slug: string, e: React.MouseEvent) {
+  function removeHistory(slug: string, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     const next = history.filter((item) => item.slug !== slug);
@@ -291,561 +273,551 @@ export default function AnimeHome() {
     } catch {}
   }
 
-  function clearAllHistory() {
+  function clearHistory() {
     setHistory([]);
     try {
       localStorage.removeItem(HISTORY_STORAGE_KEY);
     } catch {}
   }
 
-  const spotlightList = popular.slice(0, 6);
-  const featured = spotlightList[heroIndex] || popular[0];
+  function handleQuickSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!searchQuery.trim()) {
+      navigate('/anime/search');
+      return;
+    }
+    navigate(`/anime/search?q=${encodeURIComponent(searchQuery.trim())}`);
+  }
+
+  const spotlightPool = popular.slice(0, 5);
+  const featured = spotlightPool[heroIndex] || popular[0];
 
   return (
-    <div className="min-h-[100dvh] bg-[#08090c] text-zinc-100">
+    <div className="min-h-[100dvh] bg-[#070709] pb-24 text-zinc-100">
       <Navbar />
 
-      <div className="pt-[68px] sm:pt-[76px]">
-        <AnimeSubBar activeTab={activeTab} onSelectTab={setActiveTab} />
+      <main className="mx-auto max-w-[1440px] px-4 pt-20 sm:px-6 sm:pt-24">
+        {/* Top Utility Strip (Pencarian Cepat & Indikator Katalog) */}
+        <div className="flex flex-col justify-between gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-xs font-bold tracking-widest text-[#ff5522]">
+              ANIMEKAI // ARCHIVE
+            </span>
+            <span className="font-mono text-[11px] text-zinc-500">
+              INDEXED STREAMING TERMINAL
+            </span>
+          </div>
 
-        <main className="mx-auto max-w-[1440px] px-4 pb-24 pt-6 sm:px-6">
-          {/* TAB 1: OVERVIEW (HOME) */}
-          {activeTab === 'home' && (
-            <div className="space-y-12">
-              {/* Asymmetric Split Hero (Editorial Dark Tech) */}
-              <section className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                <div className="relative flex min-h-[340px] flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-6 sm:p-8 lg:col-span-8">
-                  {featured?.banner || featured?.poster ? (
-                    <div className="pointer-events-none absolute inset-0">
-                      <img
-                        src={featured.banner || featured.poster}
-                        alt=""
-                        className="h-full w-full object-cover opacity-25 transition-all duration-700"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#0d0f14] via-[#0d0f14]/90 to-transparent" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0d0f14] via-transparent to-transparent" />
-                    </div>
-                  ) : null}
+          <form onSubmit={handleQuickSearch} className="flex w-full sm:w-96">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari judul anime / donghua..."
+              className="h-10 flex-1 border border-r-0 border-white/15 bg-[#0c0c10] px-3.5 text-xs text-white outline-none placeholder:text-zinc-600 focus:border-[#ff5522]"
+            />
+            <button
+              type="submit"
+              className="flex h-10 items-center gap-1.5 bg-[#ff5522] px-4 text-xs font-bold text-black transition hover:bg-[#ff6b3d]"
+            >
+              <Search size={13} />
+              CARI
+            </button>
+          </form>
+        </div>
 
-                  <div className="relative flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-300">
-                      SPOTLIGHT #{heroIndex + 1}
-                    </span>
-
-                    {spotlightList.length > 1 && (
-                      <div className="flex items-center gap-1.5">
-                        {spotlightList.map((item, idx) => (
+        {/* VIEW 1: INDEX HOME */}
+        {activeTab === 'home' && (
+          <div className="mt-6 space-y-14">
+            {/* Editorial Asymmetric Hero */}
+            {featured && (
+              <section className="grid grid-cols-1 border border-white/15 bg-[#0b0b0f] lg:grid-cols-12">
+                {/* Kolom Kiri: Tipografi & Kontrol */}
+                <div className="flex flex-col justify-between border-b border-white/10 p-6 sm:p-8 lg:col-span-7 lg:border-b-0 lg:border-r">
+                  <div>
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <span className="font-mono text-[11px] font-bold text-[#ff5522]">
+                        FEATURED SELECTION // 0{heroIndex + 1}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {spotlightPool.map((item, idx) => (
                           <button
                             key={item.slug}
                             type="button"
                             onClick={() => setHeroIndex(idx)}
-                            className={`h-1.5 rounded-full transition-all ${
+                            className={`h-6 w-6 font-mono text-[11px] font-bold transition ${
                               idx === heroIndex
-                                ? 'w-7 bg-emerald-400'
-                                : 'w-2 bg-white/20 hover:bg-white/40'
+                                ? 'bg-[#ff5522] text-black'
+                                : 'bg-white/[0.04] text-zinc-500 hover:text-white'
                             }`}
-                            aria-label={`Spotlight ${idx + 1}`}
-                          />
+                          >
+                            {idx + 1}
+                          </button>
                         ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
 
-                  {featured ? (
-                    <div className="relative mt-8 max-w-2xl">
-                      <h1 className="line-clamp-2 text-2xl font-bold tracking-tight text-white sm:text-4xl">
-                        {featured.title}
-                      </h1>
+                    <h1 className="mt-6 line-clamp-2 text-3xl font-black uppercase tracking-tight text-white sm:text-5xl sm:leading-[1.02]">
+                      {featured.title}
+                    </h1>
 
-                      <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-xs text-zinc-400">
-                        {featured.score && (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-bold text-amber-300">
-                            <Star size={11} fill="currentColor" />
-                            {featured.score.toFixed(1)}
-                          </span>
-                        )}
-                        <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-zinc-200">
+                    {featured.title_romaji &&
+                      featured.title_romaji !== featured.title && (
+                        <p className="mt-2 font-mono text-xs text-zinc-500">
+                          {featured.title_romaji}
+                        </p>
+                      )}
+
+                    <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-white/10 py-3 font-mono text-xs">
+                      <div>
+                        <span className="text-zinc-500">FORMAT: </span>
+                        <span className="font-bold text-white">
                           {featured.format || 'TV'}
                         </span>
-                        {featured.episodes_total && (
-                          <span>{featured.episodes_total} EP</span>
-                        )}
-                        {featured.year && <span>{featured.year}</span>}
                       </div>
-
-                      {Array.isArray(featured.genres) &&
-                        featured.genres.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {featured.genres.slice(0, 5).map((g) => (
-                              <Link
-                                key={g}
-                                to={`/anime/search?genre=${encodeURIComponent(g)}`}
-                                className="rounded-md border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[11px] text-zinc-400 transition hover:border-emerald-400/40 hover:text-emerald-300"
-                              >
-                                {g}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-
-                      <div className="mt-6 flex flex-wrap items-center gap-2.5">
-                        <Link
-                          to={`/anime/watch/${encodeURIComponent(featured.slug)}/1`}
-                          className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-400 px-5 text-xs font-bold text-zinc-950 transition hover:bg-emerald-300 active:scale-[0.98]"
-                        >
-                          <Play size={14} fill="currentColor" />
-                          Mulai Tonton
-                        </Link>
-                        <Link
-                          to={`/anime/${encodeURIComponent(featured.slug)}`}
-                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08]"
-                        >
-                          Rincian & Episode
-                        </Link>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="relative my-auto">
-                      <div className="h-8 w-2/3 animate-pulse rounded-lg bg-white/5" />
-                      <div className="mt-3 h-4 w-1/3 animate-pulse rounded-lg bg-white/5" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Panel Samping: Indeks Genre Asli AnimeKai */}
-                <div className="flex flex-col justify-between rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-5 lg:col-span-4">
-                  <div>
-                    <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                      {featured.score && (
+                        <div>
+                          <span className="text-zinc-500">SCORE: </span>
+                          <span className="font-bold text-[#ff5522]">
+                            {featured.score.toFixed(1)} / 10
+                          </span>
+                        </div>
+                      )}
                       <div>
-                        <h2 className="text-sm font-bold text-white">
-                          Direktori Genre AnimeKai
-                        </h2>
-                        <p className="text-[11px] text-zinc-500">
-                          Klik genre untuk memfilter katalog penuh
-                        </p>
+                        <span className="text-zinc-500">EPISODES: </span>
+                        <span className="font-bold text-white">
+                          {featured.episodes_total || 'ONGOING'}
+                        </span>
                       </div>
-                      <Link
-                        to="/anime/search"
-                        className="font-mono text-[11px] font-semibold text-emerald-400 hover:underline"
-                      >
-                        Semua ({genres.length})
-                      </Link>
+                      {featured.year && (
+                        <div>
+                          <span className="text-zinc-500">YEAR: </span>
+                          <span className="font-bold text-white">
+                            {featured.year}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="mt-3.5 flex max-h-[210px] flex-wrap gap-1.5 overflow-y-auto pr-1">
-                      {genres.length === 0
-                        ? Array.from({ length: 12 }).map((_, i) => (
-                            <div
-                              key={i}
-                              className="h-7 w-20 animate-pulse rounded-lg bg-white/5"
-                            />
-                          ))
-                        : genres.map((g) => (
+                    {Array.isArray(featured.genres) &&
+                      featured.genres.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-1.5">
+                          {featured.genres.map((g) => (
                             <Link
-                              key={g.name}
-                              to={`/anime/search?genre=${encodeURIComponent(g.name)}`}
-                              className="group inline-flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-[#12151c] px-2.5 py-1 text-[11px] text-zinc-300 transition hover:border-emerald-400/40 hover:bg-emerald-400/10 hover:text-white"
+                              key={g}
+                              to={`/anime/search?genre=${encodeURIComponent(g)}`}
+                              className="border border-white/10 bg-white/[0.02] px-2.5 py-1 font-mono text-[10px] uppercase text-zinc-300 transition hover:border-[#ff5522] hover:text-[#ff5522]"
                             >
-                              <span>{g.name}</span>
-                              <span className="font-mono text-[10px] text-zinc-500 group-hover:text-emerald-300">
-                                {g.count}
-                              </span>
+                              {g}
                             </Link>
                           ))}
-                    </div>
+                        </div>
+                      )}
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-white/[0.06] pt-3.5">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('schedule')}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] py-2.5 text-xs font-semibold text-zinc-200 transition hover:border-emerald-400/30 hover:text-emerald-300"
-                    >
-                      <CalendarDays size={14} />
-                      Jadwal Mingguan
-                    </button>
+                  <div className="mt-8 flex flex-wrap items-center gap-3">
                     <Link
-                      to="/anime/search?sort=az"
-                      className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] py-2.5 text-xs font-semibold text-zinc-200 transition hover:border-emerald-400/30 hover:text-emerald-300"
+                      to={`/anime/watch/${encodeURIComponent(featured.slug)}/1`}
+                      className="inline-flex h-11 items-center gap-2.5 bg-[#ff5522] px-6 text-xs font-black uppercase tracking-wider text-black transition hover:bg-[#ff6b3d]"
                     >
-                      <Layers size={14} />
-                      Indeks A–Z
+                      <Play size={14} fill="currentColor" />
+                      Putar Episode 01
+                    </Link>
+
+                    <Link
+                      to={`/anime/${encodeURIComponent(featured.slug)}`}
+                      className="inline-flex h-11 items-center gap-2 border border-white/20 bg-transparent px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white hover:text-black"
+                    >
+                      Buka Arsip Episode
+                      <ArrowUpRight size={14} />
                     </Link>
                   </div>
                 </div>
+
+                {/* Kolom Kanan: Visual Poster & Banner Kontras Tinggi */}
+                <div className="relative min-h-[280px] overflow-hidden bg-black lg:col-span-5">
+                  <img
+                    src={featured.banner || featured.poster}
+                    alt={featured.title}
+                    className="h-full w-full object-cover opacity-65"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-transparent to-transparent" />
+                  <img
+                    src={featured.poster}
+                    alt={featured.title}
+                    className="absolute bottom-5 right-5 w-28 border border-white/20 shadow-2xl sm:w-36"
+                  />
+                </div>
               </section>
+            )}
 
-              {/* Rail Lanjutkan Menonton (Jika Ada Riwayat) */}
-              {history.length > 0 && (
-                <section>
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <Clock size={17} className="text-emerald-400" />
-                      <h2 className="text-base font-bold tracking-tight text-white sm:text-lg">
-                        Lanjutkan Menonton
-                      </h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('history')}
-                      className="text-xs font-medium text-zinc-400 hover:text-emerald-300"
-                    >
-                      Kelola Histori ({history.length})
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                    {history.slice(0, 4).map((item) => {
-                      const pct =
-                        item.totalEpisodes && item.totalEpisodes > 0
-                          ? Math.min(
-                              100,
-                              Math.round((item.episode / item.totalEpisodes) * 100)
-                            )
-                          : 100;
-
-                      return (
-                        <Link
-                          key={item.slug}
-                          to={`/anime/watch/${encodeURIComponent(item.slug)}/${item.episode}`}
-                          className="group flex items-center gap-3.5 rounded-2xl border border-white/[0.07] bg-[#0d0f14] p-3 transition hover:border-emerald-400/40 hover:bg-[#11141b]"
-                        >
-                          <img
-                            src={item.poster}
-                            alt={item.title}
-                            className="h-16 w-12 shrink-0 rounded-lg object-cover"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-1">
-                              <h3 className="truncate text-xs font-bold text-white group-hover:text-emerald-300">
-                                {item.title}
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={(e) => removeHistoryItem(item.slug, e)}
-                                className="text-zinc-500 hover:text-zinc-200"
-                              >
-                                <X size={13} />
-                              </button>
-                            </div>
-                            <p className="mt-1 font-mono text-[11px] font-semibold text-emerald-400">
-                              EP {item.episode}
-                              {item.totalEpisodes ? ` / ${item.totalEpisodes}` : ''}
-                            </p>
-                            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.08]">
-                              <div
-                                className="h-full bg-emerald-400"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {/* Grid Peringkat Terpopuler */}
+            {/* Baris Histori Tontonan Terakhir (Jika Ada) */}
+            {history.length > 0 && (
               <section>
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Flame size={18} className="text-amber-400" />
-                    <h2 className="text-base font-bold tracking-tight text-white sm:text-lg">
-                      Paling Populer
+                <div className="flex items-baseline justify-between border-b border-white/15 pb-3">
+                  <div className="flex items-baseline gap-3">
+                    <h2 className="text-lg font-black uppercase tracking-tight text-white">
+                      Terakhir Ditonton
                     </h2>
+                    <span className="font-mono text-xs text-zinc-500">
+                      ({history.length} RIWAYAT AKTIF)
+                    </span>
                   </div>
-                  <Link
-                    to="/anime/search?sort=popular"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white"
-                  >
-                    Lihat Semua
-                    <ArrowUpRight size={13} />
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                  {loading
-                    ? Array.from({ length: 6 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="aspect-[3/4] animate-pulse rounded-2xl bg-white/[0.04]"
-                        />
-                      ))
-                    : popular.slice(0, 12).map((item, idx) => (
-                        <Link
-                          key={item.slug}
-                          to={`/anime/${encodeURIComponent(item.slug)}`}
-                          className="group flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d0f14] transition hover:-translate-y-0.5 hover:border-emerald-400/40"
-                        >
-                          <div className="relative aspect-[3/4] overflow-hidden bg-zinc-900">
-                            <img
-                              src={item.poster || item.image}
-                              alt={item.title}
-                              loading="lazy"
-                              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                            />
-                            <span className="absolute left-2 top-2 rounded-md border border-white/10 bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-bold text-zinc-200 backdrop-blur-md">
-                              #{idx + 1}
-                            </span>
-                            {item.score && (
-                              <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300 backdrop-blur-md">
-                                <Star size={9} fill="currentColor" />
-                                {item.score.toFixed(1)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-1 flex-col justify-between p-3">
-                            <h3 className="line-clamp-2 text-xs font-semibold leading-snug text-zinc-100 group-hover:text-emerald-300">
-                              {item.title}
-                            </h3>
-                            <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-zinc-500">
-                              <span>{item.format || 'TV'}</span>
-                              <span>
-                                {item.episodes_total
-                                  ? `${item.episodes_total} EP`
-                                  : 'ONGOING'}
-                              </span>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                </div>
-              </section>
-
-              {/* Grid Update Episode Terbaru */}
-              <section>
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <History size={18} className="text-emerald-400" />
-                    <h2 className="text-base font-bold tracking-tight text-white sm:text-lg">
-                      Pembaruan Terbaru
-                    </h2>
-                  </div>
-                  <Link
-                    to="/anime/search?sort=latest"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white"
-                  >
-                    Lihat Semua
-                    <ArrowUpRight size={13} />
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                  {loading
-                    ? Array.from({ length: 12 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="aspect-[3/4] animate-pulse rounded-2xl bg-white/[0.04]"
-                        />
-                      ))
-                    : latest.map((item) => (
-                        <Link
-                          key={item.slug}
-                          to={`/anime/${encodeURIComponent(item.slug)}`}
-                          className="group flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d0f14] transition hover:-translate-y-0.5 hover:border-emerald-400/40"
-                        >
-                          <div className="relative aspect-[3/4] overflow-hidden bg-zinc-900">
-                            <img
-                              src={item.poster || item.image}
-                              alt={item.title}
-                              loading="lazy"
-                              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                            />
-                            <span className="absolute left-2 top-2 rounded-md bg-emerald-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-zinc-950">
-                              {item.format || 'TV'}
-                            </span>
-                          </div>
-                          <div className="flex flex-1 flex-col justify-between p-3">
-                            <h3 className="line-clamp-2 text-xs font-semibold leading-snug text-zinc-100 group-hover:text-emerald-300">
-                              {item.title}
-                            </h3>
-                            <p className="mt-2 font-mono text-[10px] text-zinc-500">
-                              {item.year || 'NEW'} ·{' '}
-                              {item.episodes_total
-                                ? `${item.episodes_total} EP`
-                                : 'AIRING'}
-                            </p>
-                          </div>
-                        </Link>
-                      ))}
-                </div>
-              </section>
-            </div>
-          )}
-
-          {/* TAB 2: JADWAL RILIS MINGGUAN (SCHEDULE) */}
-          {activeTab === 'schedule' && (
-            <div>
-              <div className="rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-5 sm:p-6">
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                  <div>
-                    <h1 className="text-xl font-bold text-white sm:text-2xl">
-                      Jadwal Rilis Mingguan
-                    </h1>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Estimasi pembaruan episode berdasarkan hari tayang di AnimeKai
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {DAYS_ORDER.map((d) => {
-                      const active = selectedDay === d.key;
-                      return (
-                        <button
-                          key={d.key}
-                          type="button"
-                          onClick={() => setSelectedDay(d.key)}
-                          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                            active
-                              ? 'bg-emerald-400 text-zinc-950 font-bold'
-                              : 'border border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:bg-white/[0.07]'
-                          }`}
-                        >
-                          {d.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {loadingSchedule ? (
-                <div className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-[3/4] animate-pulse rounded-2xl bg-white/[0.04]"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                  {(scheduleData[selectedDay] || []).map((item) => (
-                    <Link
-                      key={item.slug}
-                      to={`/anime/${encodeURIComponent(item.slug)}`}
-                      className="group flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d0f14] transition hover:-translate-y-0.5 hover:border-emerald-400/40"
-                    >
-                      <div className="relative aspect-[3/4] overflow-hidden bg-zinc-900">
-                        <img
-                          src={item.poster || item.image}
-                          alt={item.title}
-                          loading="lazy"
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                        />
-                        {item.score && (
-                          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                            <Star size={9} fill="currentColor" />
-                            {item.score.toFixed(1)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-3">
-                        <h3 className="line-clamp-2 text-xs font-semibold text-white group-hover:text-emerald-300">
-                          {item.title}
-                        </h3>
-                        <p className="mt-1.5 font-mono text-[10px] text-zinc-500">
-                          {item.format || 'TV'} ·{' '}
-                          {item.episodes_total ? `${item.episodes_total} EP` : 'ONGOING'}
-                        </p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: HISTORI TONTONAN PENUH */}
-          {activeTab === 'history' && (
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-5 sm:p-6">
-                <div>
-                  <h1 className="text-xl font-bold text-white sm:text-2xl">
-                    Histori Tontonan Kamu
-                  </h1>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Disimpan otomatis di perangkat ini setiap kali kamu memutar episode
-                  </p>
-                </div>
-
-                {history.length > 0 && (
                   <button
                     type="button"
-                    onClick={clearAllHistory}
-                    className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
+                    onClick={() => setActiveTab('history')}
+                    className="font-mono text-xs text-[#ff5522] hover:underline"
                   >
-                    <Trash2 size={14} />
-                    Bersihkan Semua Histori
+                    LIHAT SEMUA LOG →
                   </button>
-                )}
-              </div>
-
-              {history.length === 0 ? (
-                <div className="mt-12 rounded-2xl border border-white/[0.06] bg-[#0d0f14] p-12 text-center">
-                  <Clock size={28} className="mx-auto text-zinc-600" />
-                  <p className="mt-3 text-sm font-semibold text-zinc-300">
-                    Belum ada riwayat tontonan
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Pilih judul anime lalu mulai tonton episode untuk mencatat progresmu.
-                  </p>
-                  <Link
-                    to="/anime/search"
-                    className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-400 px-5 text-xs font-bold text-zinc-950"
-                  >
-                    Jelajahi Katalog
-                  </Link>
                 </div>
-              ) : (
-                <div className="mt-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-                  {history.map((item) => (
+
+                <div className="mt-4 grid grid-cols-1 border-l border-t border-white/10 sm:grid-cols-2 lg:grid-cols-4">
+                  {history.slice(0, 4).map((item) => (
                     <Link
                       key={item.slug}
                       to={`/anime/watch/${encodeURIComponent(item.slug)}/${item.episode}`}
-                      className="group flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-3.5 transition hover:border-emerald-400/40"
+                      className="group relative flex items-center gap-3.5 border-b border-r border-white/10 bg-[#0b0b0f] p-3.5 transition hover:bg-[#121218]"
                     >
                       <img
                         src={item.poster}
                         alt={item.title}
-                        className="h-24 w-16 shrink-0 rounded-xl object-cover"
+                        className="h-16 w-12 shrink-0 border border-white/10 object-cover"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <h3 className="line-clamp-1 text-sm font-bold text-white group-hover:text-emerald-300">
+                          <h3 className="truncate text-xs font-bold text-white group-hover:text-[#ff5522]">
                             {item.title}
                           </h3>
                           <button
                             type="button"
-                            onClick={(e) => removeHistoryItem(item.slug, e)}
-                            className="rounded-lg p-1 text-zinc-500 hover:bg-white/10 hover:text-white"
+                            onClick={(e) => removeHistory(item.slug, e)}
+                            className="text-zinc-600 hover:text-white"
                           >
-                            <X size={14} />
+                            <X size={13} />
                           </button>
                         </div>
-
-                        <p className="mt-1 font-mono text-xs font-semibold text-emerald-400">
-                          Terakhir: Episode {item.episode}
+                        <p className="mt-1 font-mono text-xs font-bold text-[#ff5522]">
+                          EPISODE {item.episode}
                           {item.totalEpisodes ? ` / ${item.totalEpisodes}` : ''}
                         </p>
-
-                        <p className="mt-1 text-[11px] text-zinc-500">
-                          Ditonton {formatRelativeTime(item.updatedAt)} ·{' '}
-                          {item.watchedEpisodes?.length || 1} ep selesai
+                        <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                          {formatRelativeTime(item.updatedAt)}
                         </p>
                       </div>
                     </Link>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* Layout 2 Kolom Asimetris: Rilis Terbaru (Kiri 8 Kolom) + Top Peringkat & Genre (Kanan 4 Kolom) */}
+            <section className="grid grid-cols-1 gap-10 lg:grid-cols-12">
+              {/* Kiri: Pembaruan Episode Terbaru */}
+              <div className="lg:col-span-8">
+                <div className="flex items-baseline justify-between border-b border-white/15 pb-3">
+                  <div>
+                    <h2 className="text-xl font-black uppercase tracking-tight text-white">
+                      Baru Diperbarui
+                    </h2>
+                  </div>
+                  <Link
+                    to="/anime/search?sort=latest"
+                    className="font-mono text-xs font-bold text-zinc-400 hover:text-[#ff5522]"
+                  >
+                    ARSIP LENGKAP →
+                  </Link>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                  {loading
+                    ? Array.from({ length: 12 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="aspect-[3/4] animate-pulse bg-white/[0.03]"
+                        />
+                      ))
+                    : latest.slice(0, 12).map((item) => (
+                        <Link
+                          key={item.slug}
+                          to={`/anime/${encodeURIComponent(item.slug)}`}
+                          className="group flex flex-col"
+                        >
+                          <div className="relative aspect-[3/4] overflow-hidden border border-white/10 bg-[#0d0d12]">
+                            <img
+                              src={item.poster || item.image}
+                              alt={item.title}
+                              loading="lazy"
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-103"
+                            />
+                            <div className="absolute left-0 top-0 bg-black/85 px-2 py-0.5 font-mono text-[10px] font-bold text-white">
+                              {item.format || 'TV'}
+                            </div>
+                            {item.episodes_total && (
+                              <div className="absolute bottom-0 right-0 bg-[#ff5522] px-2 py-0.5 font-mono text-[10px] font-bold text-black">
+                                {item.episodes_total} EP
+                              </div>
+                            )}
+                          </div>
+                          <h3 className="mt-2 line-clamp-1 text-xs font-bold text-zinc-100 group-hover:text-[#ff5522]">
+                            {item.title}
+                          </h3>
+                          <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                            {item.year || 'ONGOING'} · {item.status || 'RELEASED'}
+                          </p>
+                        </Link>
+                      ))}
+                </div>
+              </div>
+
+              {/* Kanan: Top 10 Ledger & Indeks Genre */}
+              <div className="space-y-10 lg:col-span-4">
+                <div>
+                  <div className="flex items-baseline justify-between border-b border-white/15 pb-3">
+                    <h2 className="text-xl font-black uppercase tracking-tight text-white">
+                      Top Peringkat
+                    </h2>
+                    <Link
+                      to="/anime/search?sort=popular"
+                      className="font-mono text-xs text-zinc-400 hover:text-[#ff5522]"
+                    >
+                      SEMUA →
+                    </Link>
+                  </div>
+
+                  <div className="mt-3 divide-y divide-white/10 border-b border-white/10">
+                    {popular.slice(0, 8).map((item, idx) => (
+                      <Link
+                        key={item.slug}
+                        to={`/anime/${encodeURIComponent(item.slug)}`}
+                        className="group flex items-center gap-3.5 py-2.5 transition hover:bg-white/[0.02]"
+                      >
+                        <span
+                          className={`w-6 font-mono text-sm font-black ${
+                            idx < 3 ? 'text-[#ff5522]' : 'text-zinc-600'
+                          }`}
+                        >
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <img
+                          src={item.poster || item.image}
+                          alt={item.title}
+                          className="h-12 w-9 shrink-0 border border-white/10 object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-xs font-bold text-zinc-100 group-hover:text-[#ff5522]">
+                            {item.title}
+                          </h3>
+                          <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-zinc-500">
+                            <span>{item.format || 'TV'}</span>
+                            <span>·</span>
+                            <span>
+                              {item.episodes_total
+                                ? `${item.episodes_total} EP`
+                                : 'AIRING'}
+                            </span>
+                          </div>
+                        </div>
+                        {item.score && (
+                          <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-amber-400">
+                            <Star size={10} fill="currentColor" />
+                            {item.score.toFixed(1)}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Direktori Genre AnimeKai */}
+                <div>
+                  <div className="flex items-baseline justify-between border-b border-white/15 pb-3">
+                    <h2 className="text-base font-black uppercase tracking-tight text-white">
+                      Indeks Genre AnimeKai
+                    </h2>
+                    <span className="font-mono text-[10px] text-zinc-500">
+                      {genres.length} KATEGORI
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid max-h-64 grid-cols-2 border-l border-t border-white/10 overflow-y-auto">
+                    {genres.map((g) => (
+                      <Link
+                        key={g.name}
+                        to={`/anime/search?genre=${encodeURIComponent(g.name)}`}
+                        className="flex items-center justify-between border-b border-r border-white/10 bg-[#0b0b0f] px-3 py-2 text-xs text-zinc-300 transition hover:bg-[#ff5522] hover:font-bold hover:text-black"
+                      >
+                        <span className="truncate">{g.name}</span>
+                        <span className="font-mono text-[10px] opacity-60">
+                          {g.count}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* VIEW 2: SCHEDULE (JADWAL RILIS HARIAN) */}
+        {activeTab === 'schedule' && (
+          <div className="mt-6">
+            <div className="border border-white/15 bg-[#0b0b0f]">
+              <div className="grid grid-cols-7 divide-x divide-white/10 border-b border-white/10">
+                {DAYS_LIST.map((d) => {
+                  const active = selectedDay === d.key;
+                  return (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => setSelectedDay(d.key)}
+                      className={`flex flex-col items-center py-3 transition ${
+                        active
+                          ? 'bg-[#ff5522] text-black'
+                          : 'bg-[#0b0b0f] text-zinc-400 hover:bg-white/[0.04] hover:text-white'
+                      }`}
+                    >
+                      <span className="font-mono text-[10px] font-bold tracking-widest">
+                        {d.short}
+                      </span>
+                      <span className="mt-0.5 hidden text-xs font-bold sm:inline">
+                        {d.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="p-5 sm:p-6">
+                {loadingSchedule ? (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="aspect-[3/4] animate-pulse bg-white/[0.04]"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                    {(scheduleData[selectedDay] || []).map((item) => (
+                      <Link
+                        key={item.slug}
+                        to={`/anime/${encodeURIComponent(item.slug)}`}
+                        className="group flex flex-col"
+                      >
+                        <div className="relative aspect-[3/4] overflow-hidden border border-white/10 bg-black">
+                          <img
+                            src={item.poster || item.image}
+                            alt={item.title}
+                            loading="lazy"
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-103"
+                          />
+                          {item.score && (
+                            <span className="absolute right-0 top-0 bg-black/85 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400">
+                              ★ {item.score.toFixed(1)}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="mt-2 line-clamp-1 text-xs font-bold text-white group-hover:text-[#ff5522]">
+                          {item.title}
+                        </h3>
+                        <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                          {item.format || 'TV'} ·{' '}
+                          {item.episodes_total
+                            ? `${item.episodes_total} EP`
+                            : 'SIMULCAST'}
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 3: WATCHLOG (HISTORI TONTONAN) */}
+        {activeTab === 'history' && (
+          <div className="mt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4 border border-white/15 bg-[#0b0b0f] p-5">
+              <div>
+                <h1 className="text-xl font-black uppercase tracking-tight text-white">
+                  Log Riwayat Tontonan
+                </h1>
+                <p className="mt-0.5 font-mono text-xs text-zinc-500">
+                  DISIMPAN SECARA LOKAL DI PERANGKAT INI ({history.length} JUDUL)
+                </p>
+              </div>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearHistory}
+                  className="inline-flex items-center gap-2 border border-red-500/40 bg-red-500/10 px-4 py-2 font-mono text-xs font-bold text-red-300 transition hover:bg-red-500 hover:text-black"
+                >
+                  <Trash2 size={13} />
+                  HAPUS SEMUA LOG
+                </button>
               )}
             </div>
-          )}
-        </main>
-      </div>
+
+            {history.length === 0 ? (
+              <div className="mt-6 border border-white/10 bg-[#0b0b0f] p-12 text-center">
+                <p className="font-mono text-xs uppercase text-zinc-500">
+                  Belum ada episode yang tercatat di histori.
+                </p>
+                <Link
+                  to="/anime/search"
+                  className="mt-4 inline-block bg-[#ff5522] px-5 py-2.5 text-xs font-bold uppercase text-black"
+                >
+                  Mulai Eksplorasi Katalog
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-6 grid grid-cols-1 border-l border-t border-white/15 sm:grid-cols-2 lg:grid-cols-3">
+                {history.map((item) => (
+                  <Link
+                    key={item.slug}
+                    to={`/anime/watch/${encodeURIComponent(item.slug)}/${item.episode}`}
+                    className="group flex items-center gap-4 border-b border-r border-white/15 bg-[#0b0b0f] p-4 transition hover:bg-[#121218]"
+                  >
+                    <img
+                      src={item.poster}
+                      alt={item.title}
+                      className="h-24 w-16 shrink-0 border border-white/10 object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="line-clamp-1 text-sm font-bold text-white group-hover:text-[#ff5522]">
+                          {item.title}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={(e) => removeHistory(item.slug, e)}
+                          className="text-zinc-500 hover:text-white"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <p className="mt-1.5 font-mono text-xs font-bold text-[#ff5522]">
+                        LANJUT EPISODE {item.episode}
+                        {item.totalEpisodes ? ` / ${item.totalEpisodes}` : ''}
+                      </p>
+                      <p className="mt-1 font-mono text-[10px] text-zinc-500">
+                        {formatRelativeTime(item.updatedAt)} ·{' '}
+                        {item.watchedEpisodes?.length || 1} EP SELESAI
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      <AnimeBottomBar activeTab={activeTab} onSelectTab={setActiveTab} />
     </div>
   );
 }

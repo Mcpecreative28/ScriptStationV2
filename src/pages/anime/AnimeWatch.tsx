@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  CheckCircle2,
+  Check,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -11,12 +11,10 @@ import {
   Minimize2,
   Play,
   RotateCcw,
-  Server,
-  Volume2,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import {
-  AnimeSubBar,
+  AnimeBottomBar,
   HISTORY_STORAGE_KEY,
   type WatchHistoryItem,
 } from './AnimeHome';
@@ -154,264 +152,247 @@ export default function AnimeWatch() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[#08090c] text-zinc-100">
+    <div className="min-h-[100dvh] bg-[#070709] pb-24 text-zinc-100">
       <Navbar />
 
-      <div className="pt-[68px] sm:pt-[76px]">
-        <AnimeSubBar activeTab="watch" />
-
-        <main className="mx-auto max-w-[1440px] px-4 pb-24 pt-5 sm:px-6">
-          {/* Header Navigasi Episode */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Link
-                to={`/anime/${encodeURIComponent(streamData?.slug || slug || '')}`}
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#0d0f14] px-3.5 text-xs font-semibold text-zinc-300 transition hover:border-white/20 hover:text-white"
-              >
-                <ArrowLeft size={14} />
-                Detail Anime
-              </Link>
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-bold text-white sm:text-xl">
-                  {streamData?.title || slug}
-                </h1>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTheaterMode((v) => !v)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-[#0d0f14] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:text-white"
-              >
-                {theaterMode ? (
-                  <Minimize2 size={13} />
-                ) : (
-                  <Maximize2 size={13} />
-                )}
-                {theaterMode ? 'Normal' : 'Layar Lebar'}
-              </button>
-
-              <span className="inline-flex h-9 items-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 font-mono text-xs font-bold text-emerald-300">
-                EP {currentEp}
-                {totalEpisodes ? ` / ${totalEpisodes}` : ''}
-              </span>
-            </div>
+      <main
+        className={`mx-auto px-4 pt-20 sm:px-6 sm:pt-24 ${
+          theaterMode ? 'max-w-[1600px]' : 'max-w-[1440px]'
+        }`}
+      >
+        {/* Top Broadcast Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-3">
+          <div className="flex items-center gap-4">
+            <Link
+              to={`/anime/${encodeURIComponent(streamData?.slug || slug || '')}`}
+              className="inline-flex items-center gap-1.5 font-mono text-xs font-bold uppercase text-zinc-400 hover:text-[#ff5522]"
+            >
+              <ArrowLeft size={14} /> DOSSIER
+            </Link>
+            <span className="text-zinc-700">/</span>
+            <h1 className="truncate text-sm font-black uppercase tracking-tight text-white sm:text-lg">
+              {streamData?.title || slug}
+            </h1>
           </div>
 
-          {/* Layout Utama: Video Player + Sidebar Daftar Episode */}
-          <div
-            className={`mt-4 grid grid-cols-1 gap-5 ${
-              theaterMode ? 'lg:grid-cols-1' : 'lg:grid-cols-12'
-            }`}
-          >
-            <div className={theaterMode ? 'col-span-1' : 'lg:col-span-9'}>
-              <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black">
-                <div className="relative aspect-video w-full bg-black">
-                  {loading ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-                      <Loader2
-                        size={30}
-                        className="animate-spin text-emerald-400"
-                      />
-                      <p className="font-mono text-xs text-zinc-400">
-                        Memuat stream Server {server}...
-                      </p>
-                    </div>
-                  ) : error ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
-                      <p className="text-sm font-semibold text-red-400">
-                        {error}
-                      </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTheaterMode((v) => !v)}
+              className="inline-flex h-8 items-center gap-1.5 border border-white/15 bg-[#0b0b0f] px-3 font-mono text-[11px] font-bold uppercase text-zinc-300 hover:border-white/40 hover:text-white"
+            >
+              {theaterMode ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              {theaterMode ? 'NORMAL VIEW' : 'WIDE MONITOR'}
+            </button>
+            <span className="inline-flex h-8 items-center bg-[#ff5522] px-3 font-mono text-xs font-black text-black">
+              EP {String(currentEp).padStart(2, '0')}
+              {totalEpisodes ? ` / ${totalEpisodes}` : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Main Monitor + Episode Matrix */}
+        <div
+          className={`mt-5 grid grid-cols-1 gap-6 ${
+            theaterMode ? 'lg:grid-cols-1' : 'lg:grid-cols-12'
+          }`}
+        >
+          <div className={theaterMode ? 'col-span-1' : 'lg:col-span-9'}>
+            <div className="border border-white/15 bg-black">
+              <div className="relative aspect-video w-full bg-black">
+                {loading ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+                    <Loader2 size={28} className="animate-spin text-[#ff5522]" />
+                    <p className="font-mono text-xs text-zinc-500">
+                      CONNECTING TO SERVER 0{server}...
+                    </p>
+                  </div>
+                ) : error ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="font-mono text-xs text-red-400">{error}</p>
+                    <button
+                      type="button"
+                      onClick={() => setServer('2')}
+                      className="inline-flex h-9 items-center gap-2 bg-[#ff5522] px-4 font-mono text-xs font-bold uppercase text-black"
+                    >
+                      <RotateCcw size={13} /> RELOAD SERVER 02
+                    </button>
+                  </div>
+                ) : iframeSrc ? (
+                  <iframe
+                    key={iframeSrc}
+                    src={iframeSrc}
+                    title={`${streamData.title} Episode ${currentEp}`}
+                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                    className="h-full w-full border-0"
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center font-mono text-xs text-zinc-500">
+                    STREAM UNAVAILABLE
+                  </div>
+                )}
+              </div>
+
+              {/* Matrix Control Deck */}
+              <div className="border-t border-white/15 bg-[#0b0b0f]">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-3.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[10px] tracking-widest text-zinc-500">
+                      NODE:
+                    </span>
+                    {[
+                      { id: '2', label: 'SRV-02 (PRIMARY)' },
+                      { id: '1', label: 'SRV-01' },
+                      { id: '3', label: 'SRV-03' },
+                    ].map((srv) => (
                       <button
+                        key={srv.id}
                         type="button"
-                        onClick={() => setServer('2')}
-                        className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-400 px-4 text-xs font-bold text-zinc-950"
+                        onClick={() => setServer(srv.id)}
+                        className={`h-8 px-3 font-mono text-xs font-bold transition ${
+                          String(server) === srv.id
+                            ? 'bg-[#ff5522] text-black'
+                            : 'border border-white/10 bg-[#070709] text-zinc-400 hover:text-white'
+                        }`}
                       >
-                        <RotateCcw size={13} /> Muat Ulang Server 2
+                        {srv.label}
                       </button>
-                    </div>
-                  ) : iframeSrc ? (
-                    <iframe
-                      key={iframeSrc}
-                      src={iframeSrc}
-                      title={`${streamData.title} Episode ${currentEp}`}
-                      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                      allowFullScreen
-                      className="h-full w-full border-0"
-                    />
-                  ) : (
-                    <div className="grid h-full place-items-center text-xs text-zinc-500">
-                      Stream tidak tersedia.
-                    </div>
-                  )}
+                    ))}
+
+                    <span className="ml-2 font-mono text-[10px] tracking-widest text-zinc-500">
+                      TRACK:
+                    </span>
+                    {availableAudios.map((aud) => (
+                      <button
+                        key={aud}
+                        type="button"
+                        onClick={() =>
+                          setAudio(
+                            String(aud).toLowerCase() === 'dub' ? 'dub' : 'sub'
+                          )
+                        }
+                        className={`h-8 px-3 font-mono text-xs font-bold uppercase transition ${
+                          audio === String(aud).toLowerCase()
+                            ? 'border border-[#ff5522] bg-[#ff5522]/15 text-[#ff5522]'
+                            : 'border border-white/10 bg-[#070709] text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {aud}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!hasPrev}
+                      onClick={() =>
+                        navigate(
+                          `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp - 1}`
+                        )
+                      }
+                      className="inline-flex h-8 items-center gap-1 border border-white/15 bg-[#070709] px-3 font-mono text-xs font-bold text-zinc-200 hover:bg-white hover:text-black disabled:opacity-35"
+                    >
+                      <ChevronLeft size={13} /> PREV
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!hasNext}
+                      onClick={() =>
+                        navigate(
+                          `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp + 1}`
+                        )
+                      }
+                      className="inline-flex h-8 items-center gap-1 bg-white px-3 font-mono text-xs font-bold text-black hover:bg-zinc-200 disabled:opacity-35"
+                    >
+                      NEXT <ChevronRight size={13} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Control Deck */}
-                <div className="border-t border-white/[0.08] bg-[#0d0f14] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <Server size={14} className="text-emerald-400" />
-                        <span className="text-xs font-medium text-zinc-400">
-                          Server:
-                        </span>
-                        {[
-                          { id: '2', label: 'Server 2 (Utama)' },
-                          { id: '1', label: 'Server 1' },
-                          { id: '3', label: 'Server 3' },
-                        ].map((srv) => (
-                          <button
-                            key={srv.id}
-                            type="button"
-                            onClick={() => setServer(srv.id)}
-                            className={`h-8 rounded-lg px-3 text-xs font-bold transition ${
-                              String(server) === srv.id
-                                ? 'bg-emerald-400 text-zinc-950'
-                                : 'border border-white/[0.08] bg-[#08090c] text-zinc-300 hover:text-white'
-                            }`}
-                          >
-                            {srv.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <Volume2 size={14} className="text-zinc-400" />
-                        {availableAudios.map((aud) => (
-                          <button
-                            key={aud}
-                            type="button"
-                            onClick={() =>
-                              setAudio(
-                                String(aud).toLowerCase() === 'dub'
-                                  ? 'dub'
-                                  : 'sub'
-                              )
-                            }
-                            className={`h-8 rounded-lg px-2.5 font-mono text-xs font-bold uppercase transition ${
-                              audio === String(aud).toLowerCase()
-                                ? 'border border-emerald-400/50 bg-emerald-400/15 text-emerald-300'
-                                : 'border border-white/[0.08] bg-[#08090c] text-zinc-400 hover:text-white'
-                            }`}
-                          >
-                            {aud}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
+                {streamData?.stream_url && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                    <span className="font-mono text-[11px] text-zinc-500">
+                      DIRECT STREAM FALLBACK (SERVER 02):
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        disabled={!hasPrev}
-                        onClick={() =>
-                          navigate(
-                            `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp - 1}`
-                          )
-                        }
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/[0.08] bg-[#08090c] px-3 text-xs font-semibold text-zinc-200 transition hover:border-white/20 disabled:opacity-40"
+                        onClick={openPopupPlayer}
+                        className="inline-flex h-7 items-center gap-1.5 bg-[#ff5522] px-3 font-mono text-[11px] font-bold uppercase text-black"
                       >
-                        <ChevronLeft size={14} /> Prev
+                        <Play size={11} fill="currentColor" />
+                        POP-UP MONITOR
                       </button>
-
-                      <button
-                        type="button"
-                        disabled={!hasNext}
-                        onClick={() =>
-                          navigate(
-                            `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${currentEp + 1}`
-                          )
-                        }
-                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-3 text-xs font-bold text-zinc-950 transition hover:bg-zinc-200 disabled:opacity-40"
+                      <a
+                        href={streamData.stream_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-7 items-center gap-1 border border-white/15 px-3 font-mono text-[11px] font-bold uppercase text-zinc-300 hover:text-white"
                       >
-                        Next <ChevronRight size={14} />
-                      </button>
+                        EXTERNAL TAB
+                        <ExternalLink size={11} />
+                      </a>
                     </div>
                   </div>
-
-                  {streamData?.stream_url && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
-                      <span className="text-[11px] text-zinc-500">
-                        Jika player terhalang proteksi jaringan browser, buka langsung
-                        Server 2:
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={openPopupPlayer}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-bold text-zinc-950 transition hover:bg-emerald-300"
-                        >
-                          <Play size={12} fill="currentColor" />
-                          Pop-Up Player
-                        </button>
-                        <a
-                          href={streamData.stream_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-[#08090c] px-3 text-xs font-semibold text-zinc-200 hover:border-white/25"
-                        >
-                          Tab Baru
-                          <ExternalLink size={12} />
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Sidebar Episode */}
-            <div className={theaterMode ? 'col-span-1' : 'lg:col-span-3'}>
-              <div className="flex h-full max-h-[540px] flex-col rounded-2xl border border-white/[0.08] bg-[#0d0f14] p-4">
-                <div className="border-b border-white/[0.07] pb-3">
-                  <h2 className="text-sm font-bold text-white">Pilih Episode</h2>
-                  <p className="font-mono text-[11px] text-zinc-500">
-                    {watchedEpisodes.length} / {totalEpisodes || '?'} ditonton
-                  </p>
-                </div>
-
-                <div className="mt-3 grid flex-1 grid-cols-4 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-6 lg:grid-cols-4">
-                  {(streamData?.episodes_list || []).map(
-                    (epItem: any, idx: number) => {
-                      const num = Number(epItem.episode || epItem || idx + 1);
-                      const isCurrent = num === currentEp;
-                      const isWatched = watchedEpisodes.includes(num);
-
-                      return (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() =>
-                            navigate(
-                              `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${num}`
-                            )
-                          }
-                          className={`flex items-center justify-center gap-1 rounded-lg border py-2 font-mono text-xs font-bold transition ${
-                            isCurrent
-                              ? 'border-emerald-400 bg-emerald-400 text-zinc-950'
-                              : isWatched
-                                ? 'border-white/10 bg-white/[0.02] text-zinc-500 hover:text-white'
-                                : 'border-white/[0.07] bg-[#08090c] text-zinc-300 hover:border-emerald-400/40 hover:text-emerald-300'
-                          }`}
-                        >
-                          <span>{num}</span>
-                          {isWatched && !isCurrent && (
-                            <CheckCircle2
-                              size={10}
-                              className="text-emerald-400"
-                            />
-                          )}
-                        </button>
-                      );
-                    }
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
-        </main>
-      </div>
+
+          {/* Episode Matrix Sidebar */}
+          <div className={theaterMode ? 'col-span-1' : 'lg:col-span-3'}>
+            <div className="flex h-full max-h-[540px] flex-col border border-white/15 bg-[#0b0b0f]">
+              <div className="flex items-center justify-between border-b border-white/15 px-4 py-3">
+                <span className="font-mono text-xs font-bold uppercase text-white">
+                  EPISODE MATRIX
+                </span>
+                <span className="font-mono text-[11px] text-zinc-500">
+                  {watchedEpisodes.length}/{totalEpisodes || '?'} LOGGED
+                </span>
+              </div>
+
+              <div className="grid flex-1 grid-cols-4 border-l border-white/10 overflow-y-auto sm:grid-cols-6 lg:grid-cols-4">
+                {(streamData?.episodes_list || []).map(
+                  (epItem: any, idx: number) => {
+                    const num = Number(epItem.episode || epItem || idx + 1);
+                    const isCurrent = num === currentEp;
+                    const isWatched = watchedEpisodes.includes(num);
+
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() =>
+                          navigate(
+                            `/anime/watch/${encodeURIComponent(streamData?.slug || slug || '')}/${num}`
+                          )
+                        }
+                        className={`flex h-10 items-center justify-center gap-1 border-b border-r border-white/10 font-mono text-xs font-bold transition ${
+                          isCurrent
+                            ? 'bg-[#ff5522] text-black'
+                            : isWatched
+                              ? 'bg-white/[0.03] text-zinc-500 hover:text-white'
+                              : 'bg-[#0b0b0f] text-zinc-300 hover:bg-white/[0.05] hover:text-[#ff5522]'
+                        }`}
+                      >
+                        <span>{String(num).padStart(2, '0')}</span>
+                        {isWatched && !isCurrent && (
+                          <Check size={10} className="text-[#ff5522]" />
+                        )}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <AnimeBottomBar activeTab="watch" />
     </div>
   );
 }
