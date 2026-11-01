@@ -57,8 +57,16 @@ function send(res, status, data, noCache = false) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  // Handle CORS Preflight jika dibutuhkan oleh player
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST, OPTIONS');
     return send(res, 405, {
       status: false,
       error: 'Method tidak diizinkan.',
@@ -149,8 +157,34 @@ export default async function handler(req, res) {
       }
 
       case 'embed': {
+        const proxyUrl = getParam(req.query?.proxy_url).trim();
+
+        // 1. Jika ini adalah panggilan sub-request dari script player (Fetch / XHR Interceptor)
+        if (proxyUrl) {
+          const bodyPayload =
+            req.method === 'POST' && req.body
+              ? typeof req.body === 'string'
+                ? req.body
+                : JSON.stringify(req.body)
+              : null;
+
+          const proxied = await anime.proxyPlayerRequest(
+            proxyUrl,
+            req.method,
+            bodyPayload
+          );
+          res.setHeader('Content-Type', proxied.contentType);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, s-maxage=120');
+          return res.status(proxied.status).send(proxied.buffer || proxied.body);
+        }
+
+        // 2. Jika ini adalah panggilan HTML utama iframe player
         const hash = getParam(req.query?.hash).trim();
-        const host = getParam(req.query?.host, 'https://play.anikai.org').trim();
+        const host = getParam(
+          req.query?.host,
+          'https://play.anikai.org'
+        ).trim();
 
         if (!hash) {
           return res.status(400).send('Hash stream tidak ditemukan.');
@@ -158,8 +192,8 @@ export default async function handler(req, res) {
 
         const html = await anime.fetchPlayerEmbedHtml(hash, host);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Cache-Control', 'public, s-maxage=300');
-        // Pastikan tidak ada X-Frame-Options agar iframe web kita diizinkan penuh
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'no-store');
         res.removeHeader('X-Frame-Options');
         return res.status(200).send(html);
       }
