@@ -48,10 +48,12 @@ function request(urlStr, options = {}) {
           const chunks = [];
           res.on("data", (chunk) => chunks.push(chunk));
           res.on("end", () => {
-            const body = Buffer.concat(chunks).toString("utf-8");
+            const buffer = Buffer.concat(chunks);
+            const body = buffer.toString("utf-8");
             resolve({
               status: res.statusCode,
               headers: res.headers,
+              buffer,
               body,
               json: () => JSON.parse(body),
             });
@@ -493,9 +495,6 @@ async function getDetail(slugOrId) {
   };
 }
 
-/**
- * Resolve direct video player URL + Proxy Embed URL agar lolos X-Frame-Options
- */
 async function getStream(
   slugOrId,
   episodeNumber = 1,
@@ -516,7 +515,6 @@ async function getStream(
     );
   }
 
-  // Default ke Server 2 karena Server 2 adalah server aktif utama di AnimeKai
   const selectedServer = stripQuotes(
     server ? String(server) : anime.player.server_default || "2"
   );
@@ -567,10 +565,14 @@ async function getStream(
 }
 
 /**
- * Mengambil halaman HTML dari play.anikai.org/watch dan menyuntikkan hash episode
- * sehingga bisa dimuat di dalam iframe ScriptStationV2 tanpa blokir X-Frame-Options / CSP!
+ * Mengambil halaman HTML dari play.anikai.org/watch dan menyuntikkan
+ * Fetch + XHR Proxy Interceptor agar request internal player tidak terkena blokir CORS
+ * ("The player could not be reached.")!
  */
-async function fetchPlayerEmbedHtml(streamHash, playerHost = "https://play.anikai.org") {
+async function fetchPlayerEmbedHtml(
+  streamHash,
+  playerHost = "https://play.anikai.org"
+) {
   const cleanHost = String(playerHost || "https://play.anikai.org").replace(
     /\/+$/,
     ""
@@ -590,23 +592,85 @@ async function fetchPlayerEmbedHtml(streamHash, playerHost = "https://play.anika
 
   let html = res.body;
 
-  // Hapus meta CSP internal jika ada
+  // Hapus meta CSP bawaan jika ada
   html = html.replace(
     /<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi,
     ""
   );
 
-  // Suntikkan <base href="https://play.anikai.org/"> dan set window.location.hash sebelum script player berjalan
+  // Ubah path aset relatif (/assets/..., /js/..., /css/...) menjadi URL absolut ke play.anikai.org
+  html = html.replace(
+    /\b(src|href)=(["'])\/(?!\/)/gi,
+    `$1=$2${cleanHost}/`
+  );
+
   const injection = `
-    <base href="${cleanHost}/">
-    <meta name="referrer" content="no-referrer">
     <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;}</style>
     <script>
-      try {
-        if (${JSON.stringify(cleanHash)} && window.location.hash !== '#' + ${JSON.stringify(cleanHash)}) {
-          window.location.hash = '#' + ${JSON.stringify(cleanHash)};
+      (function() {
+        var PLAYER_HOST = ${JSON.stringify(cleanHost)};
+        var TARGET_HASH = ${JSON.stringify(cleanHash)};
+
+        // 1. Pastikan hash episode terpasang sebelum script player dieksekusi
+        try {
+          if (TARGET_HASH && window.location.hash !== '#' + TARGET_HASH) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + TARGET_HASH);
+          }
+        } catch (e) {
+          window.location.hash = '#' + TARGET_HASH;
         }
-      } catch (e) {}
+
+        // Fungsi pembantu untuk mengubah URL internal player menjadi URL Proxy kita
+        function rewriteToProxy(rawUrl) {
+          try {
+            if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+            if (rawUrl.indexOf('/api/anime/embed') !== -1 || rawUrl.indexOf('blob:') === 0 || rawUrl.indexOf('data:') === 0) {
+              return rawUrl;
+            }
+            var resolved = new URL(rawUrl, PLAYER_HOST + '/watch');
+            // Jika mengarah ke origin web kita sendiri (karena path relatif) atau ke anikai.org, belokkan ke proxy!
+            if (
+              resolved.origin === window.location.origin ||
+              resolved.hostname.indexOf('anikai.org') !== -1
+            ) {
+              var target = PLAYER_HOST + resolved.pathname + resolved.search;
+              return '/api/anime/embed?proxy_url=' + encodeURIComponent(target);
+            }
+            return rawUrl;
+          } catch (err) {
+            return rawUrl;
+          }
+        }
+
+        // 2. Intercept window.fetch agar tidak pernah gagal karena CORS ("The player could not be reached.")
+        var originalFetch = window.fetch;
+        if (originalFetch) {
+          window.fetch = function(input, init) {
+            try {
+              if (typeof input === 'string') {
+                input = rewriteToProxy(input);
+              } else if (input && typeof input.url === 'string') {
+                var newUrl = rewriteToProxy(input.url);
+                if (newUrl !== input.url) {
+                  input = new Request(newUrl, input);
+                }
+              }
+            } catch (e) {}
+            return originalFetch.call(this, input, init);
+          };
+        }
+
+        // 3. Intercept XMLHttpRequest
+        var origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+          try {
+            if (typeof url === 'string') {
+              arguments[1] = rewriteToProxy(url);
+            }
+          } catch (e) {}
+          return origOpen.apply(this, arguments);
+        };
+      })();
     </script>
   `;
 
@@ -619,6 +683,35 @@ async function fetchPlayerEmbedHtml(streamHash, playerHost = "https://play.anika
   return html;
 }
 
+/**
+ * Meneruskan request internal dari script player (fetch/XHR) ke play.anikai.org
+ * lengkap dengan header Origin & Referer resmi anikai.org
+ */
+async function proxyPlayerRequest(targetUrl, method = "GET", reqBody = null) {
+  const parsed = new URL(targetUrl);
+  if (!parsed.hostname.endsWith("anikai.org")) {
+    throw new Error("Domain proxy tidak diizinkan.");
+  }
+
+  const res = await request(parsed.toString(), {
+    method: method || "GET",
+    headers: {
+      Origin: "https://play.anikai.org",
+      Referer: "https://play.anikai.org/watch",
+      Accept: "*/*",
+    },
+    body: reqBody || undefined,
+  });
+
+  return {
+    status: res.status || 200,
+    contentType:
+      res.headers["content-type"] || "application/json; charset=utf-8",
+    buffer: res.buffer,
+    body: res.body,
+  };
+}
+
 module.exports = {
   searchAnime,
   getLatest,
@@ -628,4 +721,5 @@ module.exports = {
   getStream,
   getCatalog,
   fetchPlayerEmbedHtml,
+  proxyPlayerRequest,
 };
