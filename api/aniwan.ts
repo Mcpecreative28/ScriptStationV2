@@ -15,14 +15,31 @@ try {
   scrapeAniWanTV = require(path.join(process.cwd(), 'server', 'aniwantv.cjs'));
 }
 
-function getParam(value: unknown, fallback = ''): string {
-  if (Array.isArray(value)) return String(value[0] ?? fallback);
-  return String(value ?? fallback);
+function getStringParam(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return fallback;
+}
+
+function normalizeErrorText(err: unknown): string {
+  if (!err) return 'Gagal mengambil data dari sumber.';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object') {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.error === 'string') return obj.error;
+    return JSON.stringify(obj);
+  }
+  return String(err);
 }
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=90, stale-while-revalidate=300');
+  res.setHeader(
+    'Cache-Control',
+    'public, s-maxage=90, stale-while-revalidate=300'
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -34,17 +51,17 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const query = getParam(
-      req.query?.q ?? req.query?.url ?? req.body?.q ?? '',
+    const query = getStringParam(
+      req.query?.q ?? req.query?.url ?? req.body?.q,
       ''
     ).trim();
-    const pageRaw = Number.parseInt(getParam(req.query?.page, '1'), 10);
+    const pageRaw = Number.parseInt(getStringParam(req.query?.page, '1'), 10);
     const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
     if (query.length > 500) {
       return res.status(400).json({
         status: false,
-        error: 'Parameter query atau URL terlalu panjang.',
+        error: 'Parameter pencarian atau URL terlalu panjang.',
       });
     }
 
@@ -53,7 +70,7 @@ export default async function handler(req: any, res: any) {
     if (!result || result.status === false) {
       return res.status(502).json({
         status: false,
-        error: result?.error || 'Gagal mengambil data dari AniWanTV.',
+        error: normalizeErrorText(result?.error),
       });
     }
 
@@ -61,10 +78,7 @@ export default async function handler(req: any, res: any) {
   } catch (error: unknown) {
     return res.status(502).json({
       status: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Terjadi kesalahan pada server AniWanTV.',
+      error: normalizeErrorText(error),
     });
   }
 }
