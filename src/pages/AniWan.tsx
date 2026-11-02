@@ -40,12 +40,17 @@ type AniWanComicItem = {
   image_url: string;
 };
 
-type ScheduleItem = {
+type ScheduleEntry = {
   title: string;
   url: string;
+  chapter_url?: string;
   thumb?: string;
+  image_url?: string;
   episode?: string;
+  latest_chapter?: string;
+  type?: string;
   day: string;
+  kind?: 'anime' | 'komik';
 };
 
 type AniWanHistoryItem = {
@@ -123,6 +128,18 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(diffHour / 24)} hari lalu`;
 }
 
+function parseErrorString(err: unknown): string {
+  if (!err) return 'Terjadi gangguan jaringan.';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === 'string') return o.message;
+    if (typeof o.error === 'string') return o.error;
+  }
+  return 'Gagal memuat data dari server. Silakan coba lagi.';
+}
+
 async function fetchAniWanApi(query = '', page = 1) {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
@@ -134,21 +151,16 @@ async function fetchAniWanApi(query = '', page = 1) {
   const text = await res.text();
   if (!text || text.trim().startsWith('<')) {
     throw new Error(
-      `Layanan belum merespons data JSON (HTTP ${res.status}).`
+      `Server sedang sibuk (HTTP ${res.status}). Silakan ketuk muat ulang.`
     );
   }
   const json = JSON.parse(text);
   if (!res.ok || json?.status === false) {
-    throw new Error(
-      json?.error || `Gagal memuat konten (HTTP ${res.status}).`
-    );
+    throw new Error(parseErrorString(json?.error));
   }
   return json;
 }
 
-/**
- * Class utilitas untuk Web Liquid Glass Approximation (sesuai standar taste-skills Appendix C)
- */
 const LIQUID_PANEL =
   'relative overflow-hidden rounded-[26px] border border-white/[0.14] bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_0_rgba(255,255,255,0.06),0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl';
 
@@ -165,9 +177,13 @@ export default function AniWan() {
   const [comicFeed, setComicFeed] = useState<AniWanComicItem[]>([]);
   const [comicPage, setComicPage] = useState(1);
 
-  // Jadwal Rilis
-  const [scheduleData, setScheduleData] = useState<
-    Record<string, ScheduleItem[]>
+  // Jadwal Rilis Ganda (Anime & Komik)
+  const [scheduleType, setScheduleType] = useState<'anime' | 'komik'>('anime');
+  const [animeSchedule, setAnimeSchedule] = useState<
+    Record<string, ScheduleEntry[]>
+  >({});
+  const [comicSchedule, setComicSchedule] = useState<
+    Record<string, ScheduleEntry[]>
   >({});
   const [selectedDay, setSelectedDay] = useState<string>(getTodayIndo());
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -205,18 +221,16 @@ export default function AniWan() {
     setError('');
     try {
       const res = await fetchAniWanApi('');
-      if (Array.isArray(res?.data?.ongoing_anime)) {
-        setAnimeFeed(res.data.ongoing_anime);
-      }
-      if (Array.isArray(res?.data?.latest_comics)) {
-        setComicFeed(res.data.latest_comics);
-      }
+      const ongoing = Array.isArray(res?.data?.ongoing_anime)
+        ? res.data.ongoing_anime
+        : [];
+      const comics = Array.isArray(res?.data?.latest_comics)
+        ? res.data.latest_comics
+        : [];
+      setAnimeFeed(ongoing);
+      setComicFeed(comics);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Gagal memuat beranda. Silakan coba beberapa saat lagi.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoading(false);
     }
@@ -227,13 +241,14 @@ export default function AniWan() {
     setError('');
     try {
       const res = await fetchAniWanApi('schedule');
-      if (res?.data && typeof res.data === 'object') {
-        setScheduleData(res.data);
+      if (res?.data?.anime || res?.data?.komik) {
+        setAnimeSchedule(res.data.anime || {});
+        setComicSchedule(res.data.komik || {});
+      } else if (res?.data && typeof res.data === 'object') {
+        setAnimeSchedule(res.data);
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Gagal memuat jadwal rilis.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoadingSchedule(false);
     }
@@ -254,11 +269,7 @@ export default function AniWan() {
       }
       setComicPage(targetPage);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Katalog komik sedang penuh. Silakan ketuk muat ulang.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoading(false);
       setLoadingMoreComics(false);
@@ -283,7 +294,7 @@ export default function AniWan() {
       setSearchComicRes(Array.isArray(res?.data?.comics) ? res.data.comics : []);
       setSearchAnimeRes(Array.isArray(res?.data?.anime) ? res.data.anime : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Pencarian terkendala.');
+      setError(parseErrorString(err));
     } finally {
       setLoading(false);
     }
@@ -317,9 +328,7 @@ export default function AniWan() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Gagal menyiapkan pemutar video.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoadingModal(false);
     }
@@ -344,9 +353,7 @@ export default function AniWan() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Gagal memuat rincian komik.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoadingModal(false);
     }
@@ -379,9 +386,7 @@ export default function AniWan() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Gagal memuat lembaran komik.'
-      );
+      setError(parseErrorString(err));
     } finally {
       setLoadingModal(false);
     }
@@ -400,7 +405,7 @@ export default function AniWan() {
       loadComicPage(1, false);
     } else if (
       nextTab === 'schedule' &&
-      Object.keys(scheduleData).length === 0
+      Object.keys(animeSchedule).length === 0
     ) {
       loadSchedule();
     }
@@ -435,6 +440,9 @@ export default function AniWan() {
       badge: history.length > 0 ? history.length : undefined,
     },
   ];
+
+  const activeDayAnimeList = animeSchedule[selectedDay] || [];
+  const activeDayComicList = comicSchedule[selectedDay] || [];
 
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060b11] pb-28 text-slate-100 selection:bg-teal-400/30 selection:text-teal-100">
@@ -886,7 +894,6 @@ export default function AniWan() {
               {/* TAB 1: BERANDA (ANIME ONGOING + KOMIK TERBARU) */}
               {activeTab === 'home' && (
                 <div className="mt-8 space-y-10">
-                  {/* Lanjutkan Terakhir Dibaca / Ditonton */}
                   {history.length > 0 && (
                     <section>
                       <div className="mb-4 flex items-center justify-between">
@@ -963,10 +970,13 @@ export default function AniWan() {
 
                       <button
                         type="button"
-                        onClick={() => switchTab('schedule')}
+                        onClick={() => {
+                          setScheduleType('anime');
+                          switchTab('schedule');
+                        }}
                         className="rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
                       >
-                        Lihat Jadwal Rilis
+                        Jadwal Anime
                       </button>
                     </div>
 
@@ -1029,13 +1039,25 @@ export default function AniWan() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => switchTab('komik')}
-                        className="rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-                      >
-                        Semua Komik
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScheduleType('komik');
+                            switchTab('schedule');
+                          }}
+                          className="rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                        >
+                          Jadwal Komik
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => switchTab('komik')}
+                          className="rounded-xl bg-teal-300/20 px-3.5 py-2 text-xs font-bold text-teal-200 transition hover:bg-teal-300 hover:text-slate-950"
+                        >
+                          Semua Komik
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -1395,40 +1417,69 @@ export default function AniWan() {
                 </section>
               )}
 
-              {/* TAB 4: JADWAL RILIS ANIME MINGGUAN */}
+              {/* TAB 4: JADWAL RILIS GANDA (JADWAL ANIME & JADWAL KOMIK) */}
               {activeTab === 'schedule' && (
                 <section className="mt-8 space-y-6">
                   <div className={`${LIQUID_PANEL} p-5 sm:p-6`}>
-                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                    <div className="flex flex-col justify-between gap-4 border-b border-white/10 pb-4 sm:flex-row sm:items-center">
                       <div>
                         <h2 className="text-xl font-bold text-white sm:text-2xl">
-                          Jadwal Tayang Anime Mingguan
+                          Jadwal Rilis Anime &amp; Update Komik
                         </h2>
                         <p className="mt-1 text-xs text-slate-300/80">
-                          Pilih hari untuk melihat daftar anime yang dijadwalkan
-                          memperbarui episode baru
+                          Pantau jadwal tayang episode anime baru dan pembaruan
+                          chapter komik setiap harinya
                         </p>
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5">
-                        {DAYS_INDO.map((day) => {
-                          const active = selectedDay === day;
-                          return (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => setSelectedDay(day)}
-                              className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                                active
-                                  ? 'bg-gradient-to-r from-teal-300 to-cyan-300 font-bold text-slate-950 shadow'
-                                  : 'border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10'
-                              }`}
-                            >
-                              {day}
-                            </button>
-                          );
-                        })}
+                      {/* Switcher Jadwal Anime vs Jadwal Komik */}
+                      <div className="inline-flex self-start rounded-2xl border border-white/15 bg-slate-950/60 p-1 sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setScheduleType('anime')}
+                          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                            scheduleType === 'anime'
+                              ? 'bg-gradient-to-r from-teal-300 to-cyan-300 text-slate-950 shadow'
+                              : 'text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <Film size={14} />
+                          Jadwal Anime
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScheduleType('komik')}
+                          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                            scheduleType === 'komik'
+                              ? 'bg-gradient-to-r from-teal-300 to-cyan-300 text-slate-950 shadow'
+                              : 'text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <BookOpen size={14} />
+                          Jadwal Komik
+                        </button>
                       </div>
+                    </div>
+
+                    {/* Pilihan Hari Senin - Minggu */}
+                    <div className="mt-4 flex flex-wrap gap-1.5">
+                      {DAYS_INDO.map((day) => {
+                        const active = selectedDay === day;
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => setSelectedDay(day)}
+                            className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${
+                              active
+                                ? 'border border-teal-300/50 bg-teal-400/20 font-bold text-teal-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
+                                : 'border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1442,9 +1493,10 @@ export default function AniWan() {
                         Menyusun jadwal rilis mingguan...
                       </p>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                      {(scheduleData[selectedDay] || []).map((item, idx) => (
+                  ) : scheduleType === 'anime' ? (
+                    /* Daftar Jadwal Anime */
+                    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-3">
+                      {activeDayAnimeList.map((item, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -1455,7 +1507,7 @@ export default function AniWan() {
                         >
                           <div className="min-w-0 flex-1">
                             <span className="inline-block rounded-md bg-teal-400/15 px-2 py-0.5 text-[10px] font-semibold text-teal-300">
-                              Setiap {selectedDay}
+                              Anime · Setiap {selectedDay}
                             </span>
                             <h3 className="mt-1.5 line-clamp-1 text-sm font-bold text-white group-hover:text-teal-200">
                               {item.title}
@@ -1465,6 +1517,60 @@ export default function AniWan() {
                             <Play size={14} fill="currentColor" />
                           </div>
                         </button>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Daftar Jadwal Rilis Komik */
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                      {activeDayComicList.map((comic, idx) => (
+                        <div
+                          key={idx}
+                          className={`${LIQUID_CARD} flex flex-col`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openComicDetail(comic.url, comic.image_url || '')
+                            }
+                            className="relative aspect-[3/4] w-full overflow-hidden bg-slate-900 text-left"
+                          >
+                            {comic.image_url && (
+                              <img
+                                src={comic.image_url}
+                                alt={comic.title}
+                                loading="lazy"
+                                className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                              />
+                            )}
+                            <span className="absolute left-2.5 top-2.5 rounded-lg bg-teal-300 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+                              {comic.type || 'Komik'}
+                            </span>
+                            <span className="absolute bottom-2 right-2 rounded-lg border border-white/15 bg-slate-950/80 px-2 py-0.5 text-[10px] font-semibold text-teal-200 backdrop-blur-md">
+                              {selectedDay}
+                            </span>
+                          </button>
+
+                          <div className="flex flex-1 flex-col justify-between p-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openComicDetail(
+                                  comic.url,
+                                  comic.image_url || ''
+                                )
+                              }
+                              className="line-clamp-2 text-left text-xs font-bold leading-snug text-white group-hover:text-teal-200"
+                            >
+                              {comic.title}
+                            </button>
+
+                            {comic.latest_chapter && (
+                              <div className="mt-2 border-t border-white/10 pt-2 text-[11px] font-semibold text-teal-300">
+                                {comic.latest_chapter}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1566,7 +1672,7 @@ export default function AniWan() {
           )}
       </main>
 
-      {/* Bottom Bar Liquid Glass (Menempel Rapat di Bawah Layar, Proporsional & Tidak Terpotong di HP) */}
+      {/* Bottom Bar Liquid Glass */}
       <nav
         aria-label="Navigasi Utama AniWanTV"
         className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.15] bg-[#070d15]/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_-12px_40px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
