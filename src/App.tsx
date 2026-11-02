@@ -17,6 +17,7 @@ import AnimeHome from './pages/anime/AnimeHome';
 import AnimeSearch from './pages/anime/AnimeSearch';
 import AnimeDetail from './pages/anime/AnimeDetail';
 import AnimeWatch from './pages/anime/AnimeWatch';
+import AniWan from './pages/AniWan';
 import './index.css';
 
 export default function App() {
@@ -50,6 +51,8 @@ export default function App() {
         <Route path="/anime/search" element={<AnimeSearch />} />
         <Route path="/anime/:slug" element={<AnimeDetail />} />
         <Route path="/anime/watch/:slug/:episode" element={<AnimeWatch />} />
+        
+        <Route path="/aniwan" element={<AniWan />} />
 
         <Route
           path="*"
