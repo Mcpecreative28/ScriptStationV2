@@ -38,7 +38,8 @@ const mainNav: NavItem[] = [
   { label: 'Marketplace', href: '/marketplace', icon: Store },
   { label: 'AMFinder', href: '/amfinder', icon: ScanSearch },
   { label: 'Downloader', href: '/downloader', icon: Download },
-  { label: 'AnimeHub', href: '/anime', icon: Tv },
+  { label: 'SSStream', href: '/anime', icon: Tv },
+  { label: 'SSStreamV2', href: '/aniwan', icon: BookOpen },
 ];
 
 function isActivePath(pathname: string, href: string) {
