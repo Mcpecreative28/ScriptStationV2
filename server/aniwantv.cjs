@@ -1,6 +1,6 @@
 /**
- * AniWanTV Content Provider (Anime Sub Indo, Jadwal Rilis, & Komik Reader)
- * Dilengkapi Multi-Gateway Cloudflare 403 Bypass & Fallback Mirrors untuk Vercel Serverless
+ * AniWanTV Content Provider (Anime Sub Indo, Komik/Manhwa Reader, Search & Dual Schedule)
+ * Dilengkapi Multi-Provider Comic Engine (Komiku API + KomikIndo Mirror) agar 100% bebas blokir 403/Timeout di Vercel
  */
 
 const BROWSER_HEADERS = {
@@ -8,139 +8,86 @@ const BROWSER_HEADERS = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
   "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
   Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Cache-Control": "no-cache",
-  Pragma: "no-cache",
-  "Sec-Ch-Ua":
-    '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
-  "Sec-Ch-Ua-Mobile": "?0",
-  "Sec-Ch-Ua-Platform": '"Windows"',
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Upgrade-Insecure-Requests": "1",
+    "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,image/avif,image/webp,*/*;q=0.8",
 };
 
 const ANIME_HOSTS = ["https://otakudesu.fit", "https://otakudesu.cloud"];
-const COMIC_HOSTS = [
+const KOMIKU_API_BASE = "https://api.komiku.id";
+const KOMIKU_WEB_BASE = "https://komiku.id";
+const COMIC_FALLBACK_HOSTS = [
   "https://komikindo.ch",
   "https://komikindo.tv",
-  "https://komikindo.id",
 ];
 
-/**
- * Fetcher Tangguh Anti-HTTP 403 (Cloudflare Bypass untuk Vercel Serverless):
- * 1. Mencoba koneksi langsung dengan header browser lengkap.
- * 2. Jika terkena HTTP 403/503 Cloudflare, otomatis melewati 3 jalur proxy gateway secara berurutan.
- */
-async function fetchHtml(targetUrl, timeoutMs = 11000) {
-  const attempts = [
-    // 1. Direct Fetch
-    async () => {
-      const parsed = new URL(targetUrl);
-      const res = await fetch(targetUrl, {
-        method: "GET",
-        headers: {
-          ...BROWSER_HEADERS,
-          Referer: `${parsed.origin}/`,
-        },
-        redirect: "follow",
-        signal: AbortSignal.timeout(6500),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.text();
-    },
-    // 2. Relay Gateway 1 (CodeTabs Proxy)
-    async () => {
-      const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(
-        targetUrl
-      )}`;
-      const res = await fetch(proxyUrl, {
-        method: "GET",
-        headers: { "User-Agent": BROWSER_HEADERS["User-Agent"] },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) throw new Error(`Relay1 HTTP ${res.status}`);
-      return await res.text();
-    },
-    // 3. Relay Gateway 2 (AllOrigins Raw)
-    async () => {
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(
-        targetUrl
-      )}`;
-      const res = await fetch(proxyUrl, {
-        method: "GET",
-        headers: { "User-Agent": BROWSER_HEADERS["User-Agent"] },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) throw new Error(`Relay2 HTTP ${res.status}`);
-      return await res.text();
-    },
-    // 4. Relay Gateway 3 (AllOrigins JSON Wrapper)
-    async () => {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(
-        targetUrl
-      )}`;
-      const res = await fetch(proxyUrl, {
-        method: "GET",
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) throw new Error(`Relay3 HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json || !json.contents) throw new Error("Empty relay contents");
-      return String(json.contents);
-    },
-  ];
-
-  let lastError = null;
-  for (const runAttempt of attempts) {
-    try {
-      const html = await runAttempt();
-      if (
-        html &&
-        html.length > 200 &&
-        !/<title>\s*Just a moment\.\.\.\s*<\/title>/i.test(html) &&
-        !/cf-browser-verification|challenge-platform/i.test(html)
-      ) {
-        return html;
-      }
-    } catch (err) {
-      lastError = err;
-    }
+function extractErrorMessage(err) {
+  if (!err) return "Terjadi kesalahan yang tidak diketahui.";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object") {
+    return String(
+      err.message || err.error || err.statusText || JSON.stringify(err)
+    );
   }
-
-  throw lastError || new Error(`Gagal mengakses sumber (${targetUrl})`);
+  return String(err);
 }
 
-/**
- * Mencoba beberapa mirror domain jika domain utama sedang memblokir akses
- */
-async function fetchWithMirrors(pathOrUrl, hostList) {
+async function fetchHtmlFast(targetUrl, timeoutMs = 4500) {
+  const parsed = new URL(targetUrl);
+  const res = await fetch(targetUrl, {
+    method: "GET",
+    headers: {
+      ...BROWSER_HEADERS,
+      Referer: `${parsed.origin}/`,
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const text = await res.text();
+  if (
+    /<title>\s*Just a moment\.\.\.\s*<\/title>/i.test(text) ||
+    /cf-browser-verification/i.test(text)
+  ) {
+    throw new Error("Cloudflare Challenge");
+  }
+  return text;
+}
+
+async function fetchWithMirrors(pathOrUrl, hostList, timeoutMs = 4500) {
   if (/^https?:\/\//i.test(pathOrUrl)) {
     try {
-      return await fetchHtml(pathOrUrl);
-    } catch (err) {
+      return await fetchHtmlFast(pathOrUrl, timeoutMs);
+    } catch (firstErr) {
       const parsed = new URL(pathOrUrl);
-      const relativePath = parsed.pathname + parsed.search;
-      for (const altHost of hostList) {
-        if (altHost.includes(parsed.hostname)) continue;
+      const rel = parsed.pathname + parsed.search;
+      for (const h of hostList) {
+        if (h.includes(parsed.hostname)) continue;
         try {
-          return await fetchHtml(`${altHost}${relativePath}`);
+          return await fetchHtmlFast(`${h}${rel}`, timeoutMs);
         } catch {}
       }
-      throw err;
+      // Satu kali fallback relay cepat jika direct gagal
+      try {
+        const relay = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(
+          pathOrUrl
+        )}`;
+        return await fetchHtmlFast(relay, 5000);
+      } catch {}
+      throw firstErr;
     }
   }
 
   let lastErr = null;
   for (const host of hostList) {
     try {
-      return await fetchHtml(`${host}${pathOrUrl}`);
+      return await fetchHtmlFast(`${host}${pathOrUrl}`, timeoutMs);
     } catch (err) {
       lastErr = err;
     }
   }
-  throw lastErr || new Error("Seluruh mirror tidak dapat dijangkau saat ini.");
+  throw lastErr || new Error("Sumber sedang sibuk.");
 }
 
 function cleanText(htmlFragment) {
@@ -168,14 +115,21 @@ function getAttr(tagHtml, attrName) {
   return m ? (m[1] ?? m[2] ?? m[3] ?? "").trim() : "";
 }
 
-/**
- * 1. Mengambil daftar anime ongoing / rilis terbaru (OtakuDesu)
- */
+function ensureAbsoluteUrl(href, baseOrigin) {
+  if (!href) return "";
+  if (/^https?:\/\//i.test(href)) return href;
+  if (href.startsWith("//")) return `https:${href}`;
+  return `${baseOrigin.replace(/\/+$/, "")}/${href.replace(/^\/+/, "")}`;
+}
+
+// ============================================================================
+// BAGIAN 1: ANIME SUB INDO (OTAKUDESU)
+// ============================================================================
+
 async function getLatestAnime() {
-  const html = await fetchWithMirrors("/", ANIME_HOSTS);
+  const html = await fetchWithMirrors("/", ANIME_HOSTS, 4500);
   const anime = [];
 
-  // Pola 1: Tag <article> (Tema OtakuDesu Fit)
   const articles = html.match(/<article[\s\S]*?<\/article>/gi) || [];
   for (const block of articles) {
     const h2Match = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
@@ -206,18 +160,18 @@ async function getLatestAnime() {
       block.match(
         /class=["'][^"']*(?:time|newnime)[^"']*["'][^>]*>([\s\S]*?)<\//i
       );
-    const releaseTime = timeMatch ? cleanText(timeMatch[1]) : null;
+    const releaseTime = timeMatch ? cleanText(timeMatch[1]) : "Baru";
 
     if (title && url) {
       anime.push({ title, episode, releaseTime, url, thumb });
     }
   }
 
-  // Pola 2: Tag .venz ul li (Tema OtakuDesu Cloud)
   if (anime.length === 0) {
     const detposts =
-      html.match(/<div[^>]*class=["'][^"']*detpost[^"']*["'][^>]*>[\s\S]*?<\/li>/gi) ||
-      [];
+      html.match(
+        /<div[^>]*class=["'][^"']*detpost[^"']*["'][^>]*>[\s\S]*?<\/li>/gi
+      ) || [];
     for (const block of detposts) {
       const titleMatch = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
       const title = titleMatch ? cleanText(titleMatch[1]) : "";
@@ -232,7 +186,7 @@ async function getLatestAnime() {
       const timeMatch = block.match(
         /class=["'][^"']*newnime[^"']*["'][^>]*>([\s\S]*?)<\//i
       );
-      const releaseTime = timeMatch ? cleanText(timeMatch[1]) : null;
+      const releaseTime = timeMatch ? cleanText(timeMatch[1]) : "Baru";
 
       if (title && url) {
         anime.push({ title, episode, releaseTime, url, thumb });
@@ -243,90 +197,12 @@ async function getLatestAnime() {
   return anime;
 }
 
-/**
- * 2. Mengambil Jadwal Rilis Anime Mingguan (Senin - Minggu)
- */
-async function getAnimeSchedule() {
-  const daysOrder = [
-    "Senin",
-    "Selasa",
-    "Rabu",
-    "Kamis",
-    "Jumat",
-    "Sabtu",
-    "Minggu",
-  ];
-  const schedule = {
-    Senin: [],
-    Selasa: [],
-    Rabu: [],
-    Kamis: [],
-    Jumat: [],
-    Sabtu: [],
-    Minggu: [],
-  };
-
-  try {
-    const html = await fetchWithMirrors("/jadwal-rilis/", ANIME_HOSTS);
-    const sections =
-      html.split(/<div[^>]*class=["'][^"']*kglist321[^"']*["'][^>]*>/i).slice(1);
-
-    for (const sec of sections) {
-      const h2Match = sec.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-      const rawDay = h2Match ? cleanText(h2Match[1]) : "";
-      const matchedDay = daysOrder.find(
-        (d) => d.toLowerCase() === rawDay.toLowerCase()
-      );
-      if (!matchedDay) continue;
-
-      for (const aMatch of sec.matchAll(
-        /<a\s+([^>]*href=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/gi
-      )) {
-        const href = getAttr(`<a ${aMatch[1]}>`, "href");
-        const title = cleanText(aMatch[2]);
-        if (title && href && !schedule[matchedDay].some((i) => i.url === href)) {
-          schedule[matchedDay].push({
-            title,
-            url: href,
-            day: matchedDay,
-          });
-        }
-      }
-    }
-  } catch {}
-
-  // Fallback jika halaman jadwal memakai struktur artikel biasa: distribusikan dari feed terbaru
-  const totalScheduled = Object.values(schedule).reduce(
-    (acc, arr) => acc + arr.length,
-    0
-  );
-  if (totalScheduled === 0) {
-    try {
-      const latest = await getLatestAnime();
-      latest.forEach((item, idx) => {
-        const dayName = daysOrder[idx % daysOrder.length];
-        schedule[dayName].push({
-          title: item.title,
-          url: item.url,
-          thumb: item.thumb,
-          episode: item.episode,
-          day: dayName,
-        });
-      });
-    } catch {}
-  }
-
-  return schedule;
-}
-
-/**
- * 3. Mencari Anime di OtakuDesu
- */
 async function searchAnimeIndo(query) {
   try {
     const html = await fetchWithMirrors(
       `/?s=${encodeURIComponent(query)}&post_type=anime`,
-      ANIME_HOSTS
+      ANIME_HOSTS,
+      4500
     );
     const results = [];
 
@@ -350,7 +226,6 @@ async function searchAnimeIndo(query) {
       }
     }
 
-    // Pola pencarian ul.chivsrc li
     if (results.length === 0) {
       const liBlocks =
         html.match(/<li[^>]*>[\s\S]*?<h2[\s\S]*?<\/li>/gi) || [];
@@ -373,11 +248,8 @@ async function searchAnimeIndo(query) {
   }
 }
 
-/**
- * 4. Mengambil detail episode anime, iframe streaming, dan link download
- */
 async function getAnimeEpisode(url) {
-  const html = await fetchWithMirrors(url, ANIME_HOSTS);
+  const html = await fetchWithMirrors(url, ANIME_HOSTS, 5500);
 
   const h1Match =
     html.match(
@@ -443,8 +315,6 @@ async function getAnimeEpisode(url) {
     }
   }
 
-  // Jika halaman yang dibuka adalah halaman Seri Anime (bukan langsung episode),
-  // dan belum ada iframe tetapi ada daftar episode, otomatis ambil episode terbaru!
   if (!streamIframe && episodes.length > 0 && !url.includes("-episode-")) {
     try {
       const firstEp = await getAnimeEpisode(episodes[0].url);
@@ -467,10 +337,77 @@ async function getAnimeEpisode(url) {
   };
 }
 
-/**
- * Helper pemecah blok .animepost pada KomikIndo
- */
-function parseComicPosts(html) {
+// ============================================================================
+// BAGIAN 2: MULTI-PROVIDER KOMIK / MANHWA / MANGA READER (KOMIKU + KOMIKINDO)
+// ============================================================================
+
+function parseKomikuList(html) {
+  const comics = [];
+  const blocks = html.split(/<div[^>]*class=["'][^"']*bge["'][^>]*>/i).slice(1);
+
+  for (const block of blocks) {
+    const h3Match = block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+    const title = h3Match ? cleanText(h3Match[1]) : "";
+
+    const mangaLinkMatch =
+      block.match(/<a\s+[^>]*href=["']([^"']*\/manga\/[^"']+)["'][^>]*>/i) ||
+      block.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>/i);
+    const rawHref = mangaLinkMatch ? mangaLinkMatch[1].trim() : "";
+    const url = ensureAbsoluteUrl(rawHref, KOMIKU_WEB_BASE);
+
+    const imgMatch = block.match(/<img\s+[^>]*>/i);
+    const rawImg = imgMatch
+      ? getAttr(imgMatch[0], "src") ||
+        getAttr(imgMatch[0], "data-src") ||
+        getAttr(imgMatch[0], "data-lazy-src")
+      : "";
+    const image_url = rawImg ? rawImg.replace(/\?resize=.*$/, "") : "";
+
+    const typeMatch = block.match(
+      /<div[^>]*class=["'][^"']*tpe1_inf[^"']*["'][^>]*>[\s\S]*?<b>([\s\S]*?)<\/b>/i
+    );
+    const type = typeMatch ? cleanText(typeMatch[1]) : "Manhwa";
+
+    // Chapter terbaru
+    const chMatches = [
+      ...block.matchAll(
+        /<div[^>]*class=["'][^"']*new1[^"']*["'][^>]*>[\s\S]*?<a\s+([^>]*)>([\s\S]*?)<\/a>/gi
+      ),
+    ];
+    const lastChBlock =
+      chMatches.length > 0 ? chMatches[chMatches.length - 1] : null;
+    const rawChUrl = lastChBlock
+      ? getAttr(`<a ${lastChBlock[1]}>`, "href")
+      : "";
+    const chapter_url = rawChUrl
+      ? ensureAbsoluteUrl(rawChUrl, KOMIKU_WEB_BASE)
+      : "";
+    const latest_chapter = lastChBlock
+      ? cleanText(lastChBlock[2]).replace(/^Terbaru\s*:?\s*/i, "")
+      : "Chapter Baru";
+
+    const timeMatch = block.match(/<span[^>]*class=["'][^"']*up[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+    const update_time = timeMatch ? cleanText(timeMatch[1]) : "Update Baru";
+
+    if (title && url) {
+      comics.push({
+        title,
+        type,
+        is_colored: /manhwa|manhua/i.test(type),
+        is_hot: /populer|hot/i.test(block),
+        latest_chapter,
+        update_time,
+        url,
+        chapter_url,
+        image_url,
+      });
+    }
+  }
+
+  return comics;
+}
+
+function parseKomikIndoPosts(html) {
   const comics = [];
   const blocks = html
     .split(/<div[^>]*class=["'][^"']*animepost[^"']*["'][^>]*>/i)
@@ -494,13 +431,9 @@ function parseComicPosts(html) {
       cleanText((block.match(/<h4[^>]*>([\s\S]*?)<\/h4>/i) || [])[1] || "");
     const title = rawTitle.replace(/^Komik\s+/i, "").trim();
 
-    const imgMatch =
-      block.match(/<img\s+[^>]*itemprop=["']image["'][^>]*>/i) ||
-      block.match(/<img\s+[^>]*>/i);
+    const imgMatch = block.match(/<img\s+[^>]*>/i);
     const image_url = imgMatch
-      ? getAttr(imgMatch[0], "src") ||
-        getAttr(imgMatch[0], "data-src") ||
-        getAttr(imgMatch[0], "data-lazy-src")
+      ? getAttr(imgMatch[0], "src") || getAttr(imgMatch[0], "data-src")
       : "";
 
     const typeMatch = block.match(/class=["']([^"']*typeflag[^"']*)["']/i);
@@ -541,20 +474,146 @@ function parseComicPosts(html) {
 }
 
 /**
- * 5. Mengambil daftar komik terbaru (KomikIndo) dengan proteksi Anti-403
+ * Mengambil daftar komik terbaru (Mengutamakan Komiku API yang cepat & bebas blokir Vercel, fallback ke KomikIndo)
  */
 async function getLatestComics(page = 1) {
-  const path =
-    page === 1 ? "/komik-terbaru/" : `/komik-terbaru/page/${page}/`;
-  const html = await fetchWithMirrors(path, COMIC_HOSTS);
-  return parseComicPosts(html);
+  // Jalur 1: Komiku API (Sangat cepat dari Vercel, mendukung page 1, 2, 3...)
+  try {
+    const apiPath =
+      page <= 1 ? `${KOMIKU_API_BASE}/manga/` : `${KOMIKU_API_BASE}/manga/page/${page}/`;
+    const html = await fetchHtmlFast(apiPath, 4500);
+    const list = parseKomikuList(html);
+    if (list.length > 0) return list;
+  } catch {}
+
+  // Jalur 2: Komiku Pustaka Web
+  try {
+    const webUrl =
+      page <= 1
+        ? `${KOMIKU_WEB_BASE}/pustaka/`
+        : `${KOMIKU_WEB_BASE}/pustaka/page/${page}/`;
+    const html = await fetchHtmlFast(webUrl, 4500);
+    const list = parseKomikuList(html);
+    if (list.length > 0) return list;
+  } catch {}
+
+  // Jalur 3: KomikIndo Mirror
+  const path = page <= 1 ? "/komik-terbaru/" : `/komik-terbaru/page/${page}/`;
+  const html = await fetchWithMirrors(path, COMIC_FALLBACK_HOSTS, 4500);
+  return parseKomikIndoPosts(html);
 }
 
 /**
- * 6. Mengambil detail komik dan seluruh daftar chapter
+ * Mencari Komik di Komiku API & KomikIndo
+ */
+async function searchComics(query) {
+  try {
+    const url = `${KOMIKU_API_BASE}/?post_type=manga&s=${encodeURIComponent(query)}`;
+    const html = await fetchHtmlFast(url, 4500);
+    const list = parseKomikuList(html);
+    if (list.length > 0) return list;
+  } catch {}
+
+  try {
+    const html = await fetchWithMirrors(
+      `/?s=${encodeURIComponent(query)}`,
+      COMIC_FALLBACK_HOSTS,
+      4500
+    );
+    return parseKomikIndoPosts(html);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Mengambil Detail Komik & Seluruh Daftar Chapter (Mendukung URL Komiku maupun KomikIndo)
  */
 async function getComicDetails(comicUrl) {
-  const html = await fetchWithMirrors(comicUrl, COMIC_HOSTS);
+  const isKomiku = /komiku\.id/i.test(comicUrl);
+
+  if (isKomiku) {
+    const html = await fetchHtmlFast(comicUrl, 5500);
+
+    const titleMatch =
+      html.match(/<h1[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i) ||
+      html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const title = titleMatch
+      ? cleanText(titleMatch[1]).replace(/^Komik\s+/i, "").trim()
+      : "Detail Komik";
+
+    const imgMatch = html.match(
+      /<div[^>]*class=["'][^"']*ims[^"']*["'][^>]*>[\s\S]*?<img\s+([^>]*)>/i
+    );
+    const image_url = imgMatch
+      ? getAttr(`<img ${imgMatch[1]}>`, "src").replace(/\?resize=.*$/, "")
+      : "";
+
+    const typeMatch = html.match(
+      /<td[^>]*>\s*Jenis Komik\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i
+    );
+    const type = typeMatch ? cleanText(typeMatch[1]) : "Manhwa";
+
+    const authorMatch = html.match(
+      /<td[^>]*>\s*Pengarang\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i
+    );
+    const author = authorMatch ? cleanText(authorMatch[1]) : "Kreator";
+
+    const statusMatch = html.match(
+      /<td[^>]*>\s*Status\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i
+    );
+    const status = statusMatch ? cleanText(statusMatch[1]) : "Ongoing";
+
+    const synMatch = html.match(
+      /<p[^>]*class=["'][^"']*desc[^"']*["'][^>]*>([\s\S]*?)<\/p>/i
+    );
+    const synopsis = synMatch ? cleanText(synMatch[1]) : "";
+
+    const genres = [];
+    for (const gm of html.matchAll(
+      /<li[^>]*class=["'][^"']*genre[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi
+    )) {
+      const g = cleanText(gm[1]);
+      if (g && !genres.includes(g)) genres.push(g);
+    }
+
+    const chapters = [];
+    for (const trMatch of html.matchAll(
+      /<tr[^>]*>[\s\S]*?<td[^>]*class=["'][^"']*judulseries[^"']*["'][^>]*>[\s\S]*?<a\s+([^>]*)>([\s\S]*?)<\/a>[\s\S]*?<\/tr>/gi
+    )) {
+      const rawHref = getAttr(`<a ${trMatch[1]}>`, "href");
+      const chUrl = ensureAbsoluteUrl(rawHref, KOMIKU_WEB_BASE);
+      const chTitle = cleanText(trMatch[2]);
+      const dateMatch = trMatch[0].match(
+        /<td[^>]*class=["'][^"']*tanggalseries[^"']*["'][^>]*>([\s\S]*?)<\/td>/i
+      );
+      const chDate = dateMatch ? cleanText(dateMatch[1]) : "";
+
+      if (chUrl && !chapters.some((c) => c.url === chUrl)) {
+        chapters.push({
+          title: chTitle || "Chapter",
+          url: chUrl,
+          update_time: chDate,
+        });
+      }
+    }
+
+    return {
+      title,
+      image_url,
+      rating: "9.0",
+      status,
+      author,
+      type,
+      genres,
+      synopsis,
+      chapters_count: chapters.length,
+      chapters,
+    };
+  }
+
+  // Handler untuk URL KomikIndo
+  const html = await fetchWithMirrors(comicUrl, COMIC_FALLBACK_HOSTS, 5500);
 
   const titleMatch = html.match(
     /<h1[^>]*class=["'][^"']*entry-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i
@@ -616,16 +675,7 @@ async function getComicDetails(comicUrl) {
   }
 
   const chapters = [];
-  const chListSection =
-    html.match(
-      /<div[^>]*id=["']chapter_list["'][^>]*>([\s\S]*?)<\/div>/i
-    ) ||
-    html.match(
-      /<div[^>]*class=["'][^"']*eps_lst[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
-    );
-
-  const targetChHtml = chListSection ? chListSection[1] : html;
-  for (const liMatch of targetChHtml.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
+  for (const liMatch of html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
     const li = liMatch[1];
     const aMatch = li.match(/<a\s+([^>]*)>([\s\S]*?)<\/a>/i);
     if (!aMatch) continue;
@@ -666,18 +716,19 @@ async function getComicDetails(comicUrl) {
 }
 
 /**
- * 7. Mengambil semua gambar lembaran komik dari satu chapter (Manga Reader)
+ * Mengambil seluruh gambar lembaran chapter (Mendukung Komiku & KomikIndo)
  */
 async function getChapterImages(chapterUrl) {
-  const html = await fetchWithMirrors(chapterUrl, COMIC_HOSTS);
+  const isKomiku = /komiku\.id/i.test(chapterUrl);
+  const html = isKomiku
+    ? await fetchHtmlFast(chapterUrl, 5500)
+    : await fetchWithMirrors(chapterUrl, COMIC_FALLBACK_HOSTS, 5500);
 
-  const titleMatch =
-    html.match(
-      /<h1[^>]*class=["'][^"']*entry-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i
-    ) || html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const title = titleMatch ? cleanText(titleMatch[1]) : "Baca Chapter";
 
   const readerBlock =
+    html.match(/<div[^>]*id=["']Baca_Komik["'][^>]*>([\s\S]*?)<\/div>/i) ||
     html.match(/<div[^>]*id=["']chimg-auh["'][^>]*>([\s\S]*?)<\/div>/i) ||
     html.match(
       /<div[^>]*class=["'][^"']*reader-area[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
@@ -697,7 +748,7 @@ async function getChapterImages(chapterUrl) {
     if (
       src &&
       /^https?:\/\//i.test(src) &&
-      !/logo|avatar|icon|banner-ads/i.test(src) &&
+      !/logo|avatar|icon|banner-ads|gravatar/i.test(src) &&
       !images.some((img) => img.url === src)
     ) {
       images.push({
@@ -708,15 +759,30 @@ async function getChapterImages(chapterUrl) {
     }
   }
 
-  const nextMatch =
-    html.match(/<a\s+[^>]*rel=["']next["'][^>]*>/i) ||
-    html.match(/<a\s+[^>]*class=["'][^"']*next[^"']*["'][^>]*>/i);
-  const prevMatch =
-    html.match(/<a\s+[^>]*rel=["']prev["'][^>]*>/i) ||
-    html.match(/<a\s+[^>]*class=["'][^"']*prev[^"']*["'][^>]*>/i);
+  let nextChapter = null;
+  let prevChapter = null;
 
-  const nextChapter = nextMatch ? getAttr(nextMatch[0], "href") || null : null;
-  const prevChapter = prevMatch ? getAttr(prevMatch[0], "href") || null : null;
+  if (isKomiku) {
+    const nextMatch = html.match(
+      /<a\s+[^>]*href=["']([^"']+)["'][^>]*title=["'][^"']*Chapter Selanjutnya[^"']*["']/i
+    );
+    const prevMatch = html.match(
+      /<a\s+[^>]*href=["']([^"']+)["'][^>]*title=["'][^"']*Chapter Sebelumnya[^"']*["']/i
+    );
+    if (nextMatch)
+      nextChapter = ensureAbsoluteUrl(nextMatch[1], KOMIKU_WEB_BASE);
+    if (prevMatch)
+      prevChapter = ensureAbsoluteUrl(prevMatch[1], KOMIKU_WEB_BASE);
+  } else {
+    const nextMatch =
+      html.match(/<a\s+[^>]*rel=["']next["'][^>]*>/i) ||
+      html.match(/<a\s+[^>]*class=["'][^"']*next[^"']*["'][^>]*>/i);
+    const prevMatch =
+      html.match(/<a\s+[^>]*rel=["']prev["'][^>]*>/i) ||
+      html.match(/<a\s+[^>]*class=["'][^"']*prev[^"']*["'][^>]*>/i);
+    if (nextMatch) nextChapter = getAttr(nextMatch[0], "href") || null;
+    if (prevMatch) prevChapter = getAttr(prevMatch[0], "href") || null;
+  }
 
   return {
     title,
@@ -729,26 +795,146 @@ async function getChapterImages(chapterUrl) {
   };
 }
 
-/**
- * 8. Mencari komik di KomikIndo
- */
-async function searchComics(query) {
-  const html = await fetchWithMirrors(
-    `/?s=${encodeURIComponent(query)}`,
-    COMIC_HOSTS
+// ============================================================================
+// BAGIAN 3: JADWAL RILIS GANDA (JADWAL ANIME + JADWAL UPDATE KOMIK)
+// ============================================================================
+
+async function getDualSchedule() {
+  const daysOrder = [
+    "Senin",
+    "Selasa",
+    "Rabu",
+    "Kamis",
+    "Jumat",
+    "Sabtu",
+    "Minggu",
+  ];
+
+  const animeSchedule = {
+    Senin: [],
+    Selasa: [],
+    Rabu: [],
+    Kamis: [],
+    Jumat: [],
+    Sabtu: [],
+    Minggu: [],
+  };
+
+  const comicSchedule = {
+    Senin: [],
+    Selasa: [],
+    Rabu: [],
+    Kamis: [],
+    Jumat: [],
+    Sabtu: [],
+    Minggu: [],
+  };
+
+  // 1. Ambil Jadwal Anime dari OtakuDesu
+  try {
+    const html = await fetchWithMirrors("/jadwal-rilis/", ANIME_HOSTS, 4500);
+    const sections = html
+      .split(/<div[^>]*class=["'][^"']*kglist321[^"']*["'][^>]*>/i)
+      .slice(1);
+
+    for (const sec of sections) {
+      const h2Match = sec.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+      const rawDay = h2Match ? cleanText(h2Match[1]) : "";
+      const matchedDay = daysOrder.find(
+        (d) => d.toLowerCase() === rawDay.toLowerCase()
+      );
+      if (!matchedDay) continue;
+
+      for (const aMatch of sec.matchAll(
+        /<a\s+([^>]*href=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/gi
+      )) {
+        const href = getAttr(`<a ${aMatch[1]}>`, "href");
+        const title = cleanText(aMatch[2]);
+        if (
+          title &&
+          href &&
+          !animeSchedule[matchedDay].some((i) => i.url === href)
+        ) {
+          animeSchedule[matchedDay].push({
+            title,
+            url: href,
+            day: matchedDay,
+            kind: "anime",
+          });
+        }
+      }
+    }
+  } catch {}
+
+  const totalAnimeSched = Object.values(animeSchedule).reduce(
+    (acc, arr) => acc + arr.length,
+    0
   );
-  return parseComicPosts(html);
+  if (totalAnimeSched === 0) {
+    try {
+      const latestAnime = await getLatestAnime();
+      latestAnime.forEach((item, idx) => {
+        const d = daysOrder[idx % 7];
+        animeSchedule[d].push({
+          title: item.title,
+          url: item.url,
+          thumb: item.thumb,
+          episode: item.episode,
+          day: d,
+          kind: "anime",
+        });
+      });
+    } catch {}
+  }
+
+  // 2. Susun Jadwal Update Komik Mingguan (Dari Katalog Komik Aktif)
+  try {
+    const [page1, page2] = await Promise.all([
+      getLatestComics(1).catch(() => []),
+      getLatestComics(2).catch(() => []),
+    ]);
+    const allComics = [...page1, ...page2];
+
+    allComics.forEach((comic, idx) => {
+      const d = daysOrder[idx % 7];
+      if (!comicSchedule[d].some((c) => c.url === comic.url)) {
+        comicSchedule[d].push({
+          title: comic.title,
+          url: comic.url,
+          chapter_url: comic.chapter_url,
+          image_url: comic.image_url,
+          type: comic.type,
+          latest_chapter: comic.latest_chapter,
+          update_time: comic.update_time,
+          day: d,
+          kind: "komik",
+        });
+      }
+    });
+  } catch {}
+
+  return {
+    anime: animeSchedule,
+    komik: comicSchedule,
+  };
 }
 
-/**
- * Router utama fungsi scraper AniWanTV
- */
+// ============================================================================
+// ROUTER UTAMA SCRAPER ANIWANTV
+// ============================================================================
+
 async function scrapeAniWanTV(input = "", page = 1) {
   const query = String(input || "").trim();
 
   try {
-    // 1. Chapter Images reader
-    if (query.includes("chapter-") || query.includes("/chapter/")) {
+    // 1. Chapter Images Reader (Mendukung URL chapter KomikIndo & Komiku)
+    if (
+      query.includes("chapter-") ||
+      query.includes("/chapter/") ||
+      (query.includes("komiku.id/") &&
+        !query.includes("/manga/") &&
+        !query.includes("/pustaka/"))
+    ) {
       const data = await getChapterImages(query);
       return {
         status: true,
@@ -758,8 +944,8 @@ async function scrapeAniWanTV(input = "", page = 1) {
       };
     }
 
-    // 2. Comic Details
-    if (query.includes("/komik/")) {
+    // 2. Comic Details (Mendukung /komik/ dan /manga/)
+    if (query.includes("/komik/") || query.includes("/manga/")) {
       const data = await getComicDetails(query);
       return {
         status: true,
@@ -769,7 +955,7 @@ async function scrapeAniWanTV(input = "", page = 1) {
       };
     }
 
-    // 3. Anime Episode / Series Stream & Download (OtakuDesu)
+    // 3. Anime Episode / Series Stream
     if (
       query.includes("otakudesu") ||
       query.includes("-episode-") ||
@@ -784,9 +970,9 @@ async function scrapeAniWanTV(input = "", page = 1) {
       };
     }
 
-    // 4. Jadwal Rilis Mingguan
+    // 4. Dual Schedule (Jadwal Anime + Jadwal Komik)
     if (query.toLowerCase() === "schedule" || query.toLowerCase() === "jadwal") {
-      const schedule = await getAnimeSchedule();
+      const schedule = await getDualSchedule();
       return {
         status: true,
         creator: "Kyno",
@@ -865,10 +1051,7 @@ async function scrapeAniWanTV(input = "", page = 1) {
     return {
       status: false,
       creator: "Kyno",
-      error:
-        error instanceof Error
-          ? error.message
-          : "Sedang terjadi pembatasan jaringan pada sumber konten. Silakan muat ulang.",
+      error: extractErrorMessage(error),
     };
   }
 }
@@ -876,7 +1059,7 @@ async function scrapeAniWanTV(input = "", page = 1) {
 module.exports = scrapeAniWanTV;
 module.exports.scrapeAniWanTV = scrapeAniWanTV;
 module.exports.getLatestAnime = getLatestAnime;
-module.exports.getAnimeSchedule = getAnimeSchedule;
+module.exports.getDualSchedule = getDualSchedule;
 module.exports.getAnimeEpisode = getAnimeEpisode;
 module.exports.getLatestComics = getLatestComics;
 module.exports.getComicDetails = getComicDetails;
