@@ -14,7 +14,9 @@ import {
   Play,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Sparkles,
+  Star,
   Trash2,
   X,
 } from 'lucide-react';
@@ -29,8 +31,14 @@ type AniWanAnimeItem = {
 };
 
 type AniWanComicItem = {
+  id?: string | number;
   title: string;
+  slug?: string;
   type: string;
+  format?: string;
+  status?: string;
+  rating?: number | string;
+  genres?: string[];
   is_colored?: boolean;
   is_hot?: boolean;
   latest_chapter?: string;
@@ -74,6 +82,25 @@ const DAYS_INDO = [
   'Jumat',
   'Sabtu',
   'Minggu',
+];
+
+const COMIC_SORT_OPTIONS = [
+  { id: 'new', label: 'Rilis Baru' },
+  { id: 'update', label: 'Update Terbaru' },
+  { id: 'popular', label: 'Terpopuler' },
+];
+
+const COMIC_FORMAT_OPTIONS = [
+  { id: '', label: 'Semua Tipe' },
+  { id: 'manhwa', label: 'Manhwa' },
+  { id: 'manga', label: 'Manga' },
+  { id: 'manhua', label: 'Manhua' },
+];
+
+const COMIC_STATUS_OPTIONS = [
+  { id: '', label: 'Semua Status' },
+  { id: 'ongoing', label: 'Ongoing' },
+  { id: 'completed', label: 'Tamat' },
 ];
 
 function getTodayIndo(): string {
@@ -140,10 +167,17 @@ function parseErrorString(err: unknown): string {
   return 'Gagal memuat data dari server. Silakan coba lagi.';
 }
 
-async function fetchAniWanApi(query = '', page = 1) {
+async function fetchAniWanApi(
+  query = '',
+  page = 1,
+  filters?: { sort?: string; status?: string; format?: string }
+) {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   if (page > 1) params.set('page', String(page));
+  if (filters?.sort) params.set('sort', filters.sort);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.format) params.set('format', filters.format);
 
   const res = await fetch(`/api/aniwan?${params.toString()}`, {
     headers: { Accept: 'application/json' },
@@ -172,10 +206,21 @@ export default function AniWan() {
     'home' | 'search' | 'komik' | 'schedule' | 'history'
   >('home');
 
-  // Data Feeds
+  // Data Feeds & Pagination
   const [animeFeed, setAnimeFeed] = useState<AniWanAnimeItem[]>([]);
+  const [animePage, setAnimePage] = useState(1);
+  const [hasMoreAnime, setHasMoreAnime] = useState(true);
+  const [loadingMoreAnime, setLoadingMoreAnime] = useState(false);
+
   const [comicFeed, setComicFeed] = useState<AniWanComicItem[]>([]);
   const [comicPage, setComicPage] = useState(1);
+  const [hasMoreComics, setHasMoreComics] = useState(true);
+  const [loadingMoreComics, setLoadingMoreComics] = useState(false);
+
+  // Filter Katalog Komik VoraToon
+  const [comicSort, setComicSort] = useState('new');
+  const [comicFormat, setComicFormat] = useState('');
+  const [comicStatus, setComicStatus] = useState('');
 
   // Jadwal Rilis Ganda (Anime & Komik)
   const [scheduleType, setScheduleType] = useState<'anime' | 'komik'>('anime');
@@ -188,12 +233,18 @@ export default function AniWan() {
   const [selectedDay, setSelectedDay] = useState<string>(getTodayIndo());
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
-  // Pencarian
+  // Pencarian & Paginasi Pencarian
   const [searchInput, setSearchInput] = useState('');
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [searchFilter, setSearchFilter] = useState<'all' | 'anime' | 'komik'>(
     'all'
   );
+  const [searchSort, setSearchSort] = useState('new');
+  const [searchFormat, setSearchFormat] = useState('');
+  const [searchStatus, setSearchStatus] = useState('');
+  const [searchPage, setSearchPage] = useState(1);
+  const [hasMoreSearch, setHasMoreSearch] = useState(false);
+  const [loadingMoreSearch, setLoadingMoreSearch] = useState(false);
   const [searchAnimeRes, setSearchAnimeRes] = useState<AniWanAnimeItem[]>([]);
   const [searchComicRes, setSearchComicRes] = useState<AniWanComicItem[]>([]);
 
@@ -204,7 +255,6 @@ export default function AniWan() {
 
   // States
   const [loading, setLoading] = useState(true);
-  const [loadingMoreComics, setLoadingMoreComics] = useState(false);
   const [loadingModal, setLoadingModal] = useState(false);
   const [error, setError] = useState('');
 
@@ -229,10 +279,87 @@ export default function AniWan() {
         : [];
       setAnimeFeed(ongoing);
       setComicFeed(comics);
+      setAnimePage(1);
+      setComicPage(1);
+      setHasMoreAnime(ongoing.length >= 10);
+      setHasMoreComics(comics.length >= 10);
     } catch (err) {
       setError(parseErrorString(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreAnimeFeed() {
+    if (loadingMoreAnime) return;
+    setLoadingMoreAnime(true);
+    setError('');
+    try {
+      const nextPage = animePage + 1;
+      const res = await fetchAniWanApi('anime', nextPage);
+      const items = Array.isArray(res?.data) ? res.data : [];
+      if (items.length > 0) {
+        setAnimeFeed((prev) => {
+          const existingUrls = new Set(prev.map((a) => a.url));
+          const unique = items.filter(
+            (a: AniWanAnimeItem) => !existingUrls.has(a.url)
+          );
+          return [...prev, ...unique];
+        });
+        setAnimePage(nextPage);
+        setHasMoreAnime(Boolean(res?.has_more && items.length >= 8));
+      } else {
+        setHasMoreAnime(false);
+      }
+    } catch (err) {
+      setError(parseErrorString(err));
+    } finally {
+      setLoadingMoreAnime(false);
+    }
+  }
+
+  async function loadComicPage(
+    targetPage: number,
+    append: boolean,
+    customFilters?: { sort?: string; format?: string; status?: string }
+  ) {
+    if (append) setLoadingMoreComics(true);
+    else setLoading(true);
+    setError('');
+
+    const activeFilters = {
+      sort: customFilters?.sort !== undefined ? customFilters.sort : comicSort,
+      format:
+        customFilters?.format !== undefined
+          ? customFilters.format
+          : comicFormat,
+      status:
+        customFilters?.status !== undefined
+          ? customFilters.status
+          : comicStatus,
+    };
+
+    try {
+      const res = await fetchAniWanApi('komik', targetPage, activeFilters);
+      const items = Array.isArray(res?.data) ? res.data : [];
+      if (append) {
+        setComicFeed((prev) => {
+          const seen = new Set(prev.map((c) => c.url));
+          const unique = items.filter(
+            (c: AniWanComicItem) => !seen.has(c.url)
+          );
+          return [...prev, ...unique];
+        });
+      } else {
+        setComicFeed(items);
+      }
+      setComicPage(targetPage);
+      setHasMoreComics(Boolean(res?.has_more ?? items.length >= 12));
+    } catch (err) {
+      setError(parseErrorString(err));
+    } finally {
+      setLoading(false);
+      setLoadingMoreComics(false);
     }
   }
 
@@ -254,50 +381,80 @@ export default function AniWan() {
     }
   }
 
-  async function loadComicPage(targetPage: number, append: boolean) {
-    if (append) setLoadingMoreComics(true);
+  async function executeSearch(
+    keyword: string,
+    targetPage: number,
+    append: boolean,
+    customFilters?: { sort?: string; format?: string; status?: string }
+  ) {
+    if (append) setLoadingMoreSearch(true);
     else setLoading(true);
     setError('');
 
+    const filters = {
+      sort: customFilters?.sort !== undefined ? customFilters.sort : searchSort,
+      format:
+        customFilters?.format !== undefined
+          ? customFilters.format
+          : searchFormat,
+      status:
+        customFilters?.status !== undefined
+          ? customFilters.status
+          : searchStatus,
+    };
+
     try {
-      const res = await fetchAniWanApi('komik', targetPage);
-      const items = Array.isArray(res?.data) ? res.data : [];
+      const res = await fetchAniWanApi(
+        `search:${keyword}`,
+        targetPage,
+        filters
+      );
+      const newComics = Array.isArray(res?.data?.comics) ? res.data.comics : [];
+      const newAnime = Array.isArray(res?.data?.anime) ? res.data.anime : [];
+
       if (append) {
-        setComicFeed((prev) => [...prev, ...items]);
+        setSearchComicRes((prev) => {
+          const seen = new Set(prev.map((c) => c.url));
+          return [
+            ...prev,
+            ...newComics.filter((c: AniWanComicItem) => !seen.has(c.url)),
+          ];
+        });
+        setSearchAnimeRes((prev) => {
+          const seen = new Set(prev.map((a) => a.url));
+          return [
+            ...prev,
+            ...newAnime.filter((a: AniWanAnimeItem) => !seen.has(a.url)),
+          ];
+        });
       } else {
-        setComicFeed(items);
+        setSearchComicRes(newComics);
+        setSearchAnimeRes(newAnime);
       }
-      setComicPage(targetPage);
+
+      setSearchPage(targetPage);
+      setHasMoreSearch(
+        Boolean(
+          res?.has_more || newComics.length >= 15 || newAnime.length >= 10
+        )
+      );
     } catch (err) {
       setError(parseErrorString(err));
     } finally {
       setLoading(false);
-      setLoadingMoreComics(false);
+      setLoadingMoreSearch(false);
     }
   }
 
   async function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     const q = searchInput.trim();
-    if (!q) return;
-
     setActiveTab('search');
-    setLoading(true);
-    setError('');
     setActiveEpisode(null);
     setActiveComic(null);
     setActiveChapter(null);
     setActiveSearchQuery(q);
-
-    try {
-      const res = await fetchAniWanApi(`search:${q}`);
-      setSearchComicRes(Array.isArray(res?.data?.comics) ? res.data.comics : []);
-      setSearchAnimeRes(Array.isArray(res?.data?.anime) ? res.data.anime : []);
-    } catch (err) {
-      setError(parseErrorString(err));
-    } finally {
-      setLoading(false);
-    }
+    await executeSearch(q, 1, false);
   }
 
   async function openAnimeEpisode(url: string, fallbackThumb = '') {
@@ -346,7 +503,8 @@ export default function AniWan() {
       if (res?.data) {
         const detail = {
           ...res.data,
-          image_url: res.data.image_url || fallbackThumb,
+          image_url:
+            res.data.image_url || res.data.coverImage || fallbackThumb,
           source_url: comicUrl,
         };
         setActiveComic(detail);
@@ -376,11 +534,19 @@ export default function AniWan() {
         const nextHist = saveAniWanHistory({
           id: activeComic?.source_url || chapterUrl,
           kind: 'komik',
-          title: activeComic?.title || res.data.title || 'Komik',
-          subLabel: res.data.title || 'Chapter Komik',
-          thumb: activeComic?.image_url || res.data.images?.[0]?.url || '',
+          title:
+            activeComic?.title ||
+            res.data.series?.title ||
+            res.data.title ||
+            'Komik VoraToon',
+          subLabel: res.data.title || 'Baca Chapter',
+          thumb:
+            activeComic?.image_url ||
+            res.data.series?.coverImage ||
+            res.data.images?.[0]?.url ||
+            '',
           targetUrl: chapterUrl,
-          parentUrl: activeComic?.source_url,
+          parentUrl: activeComic?.source_url || res.data.series?.url,
         });
         setHistory(nextHist);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -401,8 +567,10 @@ export default function AniWan() {
     setActiveChapter(null);
     setError('');
 
-    if (nextTab === 'komik' && comicFeed.length === 0) {
+    if (nextTab === 'komik' && comicFeed.length <= 12) {
       loadComicPage(1, false);
+    } else if (nextTab === 'search' && searchComicRes.length === 0 && !activeSearchQuery) {
+      executeSearch('', 1, false);
     } else if (
       nextTab === 'schedule' &&
       Object.keys(animeSchedule).length === 0
@@ -478,8 +646,8 @@ export default function AniWan() {
               </h1>
               <p className="mt-2 text-xs leading-relaxed text-slate-300/80 sm:text-sm">
                 Nikmati episode anime terbaru lengkap dengan terjemahan bahasa
-                Indonesia atau lanjutkan baca chapter manga, manhwa, dan manhua
-                favoritmu langsung dari satu tempat.
+                Indonesia atau baca ribuan chapter manhwa, manga, dan manhua
+                pilihan dari VoraToon langsung di satu tempat.
               </p>
             </div>
 
@@ -492,7 +660,7 @@ export default function AniWan() {
                 htmlFor="aniwan-search"
                 className="mb-2 block text-xs font-medium text-slate-300"
               >
-                Cari anime atau komik favoritmu
+                Cari judul anime atau komik favoritmu
               </label>
               <div className="flex items-center gap-2 rounded-2xl border border-white/20 bg-slate-950/55 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-xl focus-within:border-teal-300/60">
                 <Search
@@ -504,7 +672,7 @@ export default function AniWan() {
                   type="text"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Ketik Solo Leveling, One Piece, Boruto..."
+                  placeholder="Ketik Solo, Regressor, Naruto, One Piece..."
                   className="h-10 min-w-0 flex-1 bg-transparent px-2 text-xs text-white outline-none placeholder:text-slate-400/60 sm:text-sm"
                 />
                 {searchInput && (
@@ -538,6 +706,8 @@ export default function AniWan() {
               onClick={() => {
                 if (activeTab === 'komik') loadComicPage(comicPage, false);
                 else if (activeTab === 'schedule') loadSchedule();
+                else if (activeTab === 'search')
+                  executeSearch(activeSearchQuery, 1, false);
                 else loadDashboard();
               }}
               className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200/30 bg-amber-300/20 px-4 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-300/30"
@@ -661,7 +831,7 @@ export default function AniWan() {
           </section>
         )}
 
-        {/* OVERLAY 3: PEMBACA CHAPTER KOMIK (MANGA READER) */}
+        {/* OVERLAY 3: PEMBACA CHAPTER KOMIK VORATOON (MANGA READER) */}
         {!loadingModal && activeChapter && (
           <section className="mt-6 space-y-4">
             <div
@@ -669,7 +839,8 @@ export default function AniWan() {
             >
               <div>
                 <span className="text-xs font-medium text-teal-300">
-                  Mode Baca Komik · {activeChapter.total_pages || 0} Halaman
+                  Mode Baca Komik VoraToon · {activeChapter.total_pages || 0}{' '}
+                  Halaman
                 </span>
                 <h2 className="text-base font-bold text-white sm:text-xl">
                   {activeChapter.title}
@@ -677,10 +848,19 @@ export default function AniWan() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {activeComic && (
+                {(activeComic || activeChapter.series?.url) && (
                   <button
                     type="button"
-                    onClick={() => setActiveChapter(null)}
+                    onClick={() => {
+                      if (activeComic) {
+                        setActiveChapter(null);
+                      } else if (activeChapter.series?.url) {
+                        openComicDetail(
+                          activeChapter.series.url,
+                          activeChapter.series.coverImage || ''
+                        );
+                      }
+                    }}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20"
                   >
                     <ArrowLeft size={13} /> Daftar Chapter
@@ -724,17 +904,21 @@ export default function AniWan() {
               </button>
             </div>
 
-            {/* Kanvas Halaman Komik */}
+            {/* Kanvas Halaman Komik Resolusi Tinggi */}
             <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-white/15 bg-black shadow-2xl">
-              {(activeChapter.images || []).map((img: any) => (
-                <img
-                  key={img.page}
-                  src={img.url}
-                  alt={img.alt}
-                  loading="lazy"
-                  className="block w-full select-none"
-                />
-              ))}
+              {(activeChapter.images || []).map((img: any, idx: number) => {
+                const srcUrl = typeof img === 'string' ? img : img.url;
+                return (
+                  <img
+                    key={img.page || idx}
+                    src={srcUrl}
+                    alt={img.alt || `Halaman ${idx + 1}`}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    className="block w-full select-none"
+                  />
+                );
+              })}
             </div>
 
             {/* Navigasi Chapter Bawah */}
@@ -765,7 +949,7 @@ export default function AniWan() {
           </section>
         )}
 
-        {/* OVERLAY 4: DETAIL KOMIK & DAFTAR CHAPTER */}
+        {/* OVERLAY 4: DETAIL KOMIK VORATOON & DAFTAR CHAPTER */}
         {!loadingModal && !activeChapter && activeComic && (
           <section className="mt-6 space-y-6">
             <div className={`${LIQUID_PANEL} p-5 sm:p-8`}>
@@ -779,33 +963,40 @@ export default function AniWan() {
 
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-[200px_1fr]">
                 <img
-                  src={activeComic.image_url}
+                  src={activeComic.image_url || activeComic.coverImage}
                   alt={activeComic.title}
+                  referrerPolicy="no-referrer"
                   className="mx-auto aspect-[3/4] w-44 rounded-2xl border border-white/20 object-cover shadow-xl sm:mx-0 sm:w-full"
                 />
 
                 <div className="flex flex-col justify-between">
                   <div>
                     <div className="flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-lg bg-teal-300 px-2.5 py-1 font-bold text-slate-950">
-                        {activeComic.type || 'Komik'}
+                      <span className="rounded-lg bg-teal-300 px-2.5 py-1 font-bold uppercase text-slate-950">
+                        {activeComic.format || activeComic.type || 'Manhwa'}
                       </span>
-                      <span className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-slate-200">
+                      <span className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 capitalize text-slate-200">
                         {activeComic.status}
                       </span>
-                      {activeComic.rating && activeComic.rating !== 'N/A' && (
-                        <span className="rounded-lg border border-amber-300/30 bg-amber-400/15 px-2.5 py-1 font-bold text-amber-200">
-                          ★ {activeComic.rating}
+                      {activeComic.rating ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-amber-300/30 bg-amber-400/15 px-2.5 py-1 font-bold text-amber-200">
+                          <Star size={11} fill="currentColor" />
+                          {Number(activeComic.rating).toFixed(1)}
                         </span>
-                      )}
+                      ) : null}
                     </div>
 
                     <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
                       {activeComic.title}
                     </h2>
-                    {activeComic.author && activeComic.author !== 'N/A' && (
-                      <p className="mt-1 text-xs text-slate-400">
-                        Karya: {activeComic.author}
+                    {activeComic.nativeTitle && (
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {activeComic.nativeTitle}
+                      </p>
+                    )}
+                    {activeComic.author && (
+                      <p className="mt-1 text-xs text-teal-300/90">
+                        Author: {activeComic.author}
                       </p>
                     )}
 
@@ -823,7 +1014,7 @@ export default function AniWan() {
                         </div>
                       )}
 
-                    <p className="mt-4 text-xs leading-relaxed text-slate-300 sm:text-sm">
+                    <p className="mt-4 whitespace-pre-line text-xs leading-relaxed text-slate-300 sm:text-sm">
                       {activeComic.synopsis ||
                         'Pilih salah satu chapter di bawah untuk mulai membaca komik ini.'}
                     </p>
@@ -866,10 +1057,10 @@ export default function AniWan() {
               <h3 className="text-base font-bold text-white">
                 Daftar Chapter ({activeComic.chapters?.length || 0})
               </h3>
-              <div className="mt-4 grid max-h-[460px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+              <div className="mt-4 grid max-h-[480px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
                 {(activeComic.chapters || []).map((ch: any, idx: number) => (
                   <button
-                    key={idx}
+                    key={ch.id || idx}
                     type="button"
                     onClick={() => openChapterReader(ch.url)}
                     className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-xs text-slate-200 transition hover:border-teal-300/50 hover:bg-teal-300/15 hover:text-white"
@@ -891,9 +1082,9 @@ export default function AniWan() {
           !activeComic &&
           !activeChapter && (
             <>
-              {/* TAB 1: BERANDA (ANIME ONGOING + KOMIK TERBARU) */}
+              {/* TAB 1: BERANDA (ANIME ONGOING + KOMIK VORATOON + SHOW MORE) */}
               {activeTab === 'home' && (
-                <div className="mt-8 space-y-10">
+                <div className="mt-8 space-y-12">
                   {history.length > 0 && (
                     <section>
                       <div className="mb-4 flex items-center justify-between">
@@ -930,6 +1121,7 @@ export default function AniWan() {
                               <img
                                 src={h.thumb}
                                 alt={h.title}
+                                referrerPolicy="no-referrer"
                                 className="h-16 w-12 shrink-0 rounded-xl object-cover"
                               />
                             )}
@@ -950,7 +1142,7 @@ export default function AniWan() {
                     </section>
                   )}
 
-                  {/* Seksi Episode Anime Sub Indo Terbaru */}
+                  {/* Seksi Episode Anime Sub Indo Terbaru + Show More */}
                   <section>
                     <div className="mb-4 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -988,9 +1180,9 @@ export default function AniWan() {
                               className="aspect-[3/4] animate-pulse rounded-[22px] bg-white/[0.05]"
                             />
                           ))
-                        : animeFeed.slice(0, 12).map((item, idx) => (
+                        : animeFeed.map((item, idx) => (
                             <button
-                              key={idx}
+                              key={`${item.url}-${idx}`}
                               type="button"
                               onClick={() =>
                                 openAnimeEpisode(item.url, item.thumb)
@@ -1019,9 +1211,29 @@ export default function AniWan() {
                             </button>
                           ))}
                     </div>
+
+                    {hasMoreAnime && animeFeed.length > 0 && (
+                      <div className="mt-6 text-center">
+                        <button
+                          type="button"
+                          disabled={loadingMoreAnime}
+                          onClick={loadMoreAnimeFeed}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-teal-300/35 bg-teal-400/15 px-7 text-xs font-bold text-teal-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl transition hover:bg-teal-300 hover:text-slate-950 disabled:opacity-50"
+                        >
+                          {loadingMoreAnime ? (
+                            <>
+                              <Loader2 size={15} className="animate-spin" />
+                              Memuat Anime Lainnya...
+                            </>
+                          ) : (
+                            <>Tampilkan Lebih Banyak Anime (Show More)</>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </section>
 
-                  {/* Seksi Update Komik & Manhwa */}
+                  {/* Seksi Update Komik & Manhwa VoraToon + Show More */}
                   <section>
                     <div className="mb-4 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -1030,7 +1242,7 @@ export default function AniWan() {
                         </div>
                         <div>
                           <h2 className="text-lg font-bold text-white sm:text-xl">
-                            Komik &amp; Manhwa Baru Rilis
+                            Komik &amp; Manhwa Terbaru (VoraToon)
                           </h2>
                           <p className="text-xs text-slate-400">
                             Ketuk sampul untuk melihat daftar chapter atau ketuk
@@ -1055,7 +1267,7 @@ export default function AniWan() {
                           onClick={() => switchTab('komik')}
                           className="rounded-xl bg-teal-300/20 px-3.5 py-2 text-xs font-bold text-teal-200 transition hover:bg-teal-300 hover:text-slate-950"
                         >
-                          Semua Komik
+                          Katalog Penuh
                         </button>
                       </div>
                     </div>
@@ -1068,9 +1280,9 @@ export default function AniWan() {
                               className="aspect-[3/4] animate-pulse rounded-[22px] bg-white/[0.05]"
                             />
                           ))
-                        : comicFeed.slice(0, 12).map((comic, idx) => (
+                        : comicFeed.map((comic, idx) => (
                             <div
-                              key={idx}
+                              key={`${comic.url}-${idx}`}
                               className={`${LIQUID_CARD} flex flex-col`}
                             >
                               <button
@@ -1084,16 +1296,18 @@ export default function AniWan() {
                                   src={comic.image_url}
                                   alt={comic.title}
                                   loading="lazy"
+                                  referrerPolicy="no-referrer"
                                   className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                                 />
-                                <span className="absolute left-2.5 top-2.5 rounded-lg border border-white/15 bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-md">
+                                <span className="absolute left-2.5 top-2.5 rounded-lg border border-white/15 bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold uppercase text-white backdrop-blur-md">
                                   {comic.type}
                                 </span>
-                                {comic.is_colored && (
-                                  <span className="absolute right-2.5 top-2.5 rounded-lg bg-teal-300/95 px-2 py-0.5 text-[10px] font-bold text-slate-950">
-                                    Berwarna
+                                {comic.rating ? (
+                                  <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-lg bg-slate-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-300 backdrop-blur-md">
+                                    <Star size={9} fill="currentColor" />
+                                    {Number(comic.rating).toFixed(1)}
                                   </span>
-                                )}
+                                ) : null}
                               </button>
 
                               <div className="flex flex-1 flex-col justify-between p-3">
@@ -1131,55 +1345,157 @@ export default function AniWan() {
                             </div>
                           ))}
                     </div>
+
+                    {hasMoreComics && comicFeed.length > 0 && (
+                      <div className="mt-6 text-center">
+                        <button
+                          type="button"
+                          disabled={loadingMoreComics}
+                          onClick={() => loadComicPage(comicPage + 1, true)}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-teal-300/35 bg-teal-400/15 px-7 text-xs font-bold text-teal-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl transition hover:bg-teal-300 hover:text-slate-950 disabled:opacity-50"
+                        >
+                          {loadingMoreComics ? (
+                            <>
+                              <Loader2 size={15} className="animate-spin" />
+                              Memuat Komik Lainnya...
+                            </>
+                          ) : (
+                            <>Tampilkan Lebih Banyak Komik (Show More)</>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </section>
                 </div>
               )}
 
-              {/* TAB 2: PENCARIAN TERPADU (ANIME SUB INDO & KOMIK) */}
+              {/* TAB 2: PENCARIAN TERPADU + MULTI-FILTER VORATOON + SHOW MORE */}
               {activeTab === 'search' && (
                 <section className="mt-8 space-y-6">
-                  <div
-                    className={`${LIQUID_PANEL} flex flex-wrap items-center justify-between gap-4 p-5`}
-                  >
-                    <div>
-                      <h2 className="text-lg font-bold text-white sm:text-xl">
-                        {activeSearchQuery
-                          ? `Hasil Pencarian: "${activeSearchQuery}"`
-                          : 'Eksplorasi & Pencarian Judul'}
-                      </h2>
-                      <p className="text-xs text-slate-400">
-                        Menampilkan hasil dari katalog Anime Sub Indo dan Komik
-                        secara bersamaan
-                      </p>
+                  <div className={`${LIQUID_PANEL} space-y-4 p-5 sm:p-6`}>
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-lg font-bold text-white sm:text-xl">
+                          {activeSearchQuery
+                            ? `Hasil Pencarian: "${activeSearchQuery}"`
+                            : 'Pencarian & Filter Katalog'}
+                        </h2>
+                        <p className="text-xs text-slate-400">
+                          Saring ribuan judul komik VoraToon &amp; anime Sub Indo
+                          berdasarkan urutan, tipe, dan status rilis
+                        </p>
+                      </div>
+
+                      {/* Filter Kategori Hasil */}
+                      <div className="flex gap-2">
+                        {(
+                          [
+                            { id: 'all', label: 'Semua' },
+                            {
+                              id: 'komik',
+                              label: `Komik (${searchComicRes.length})`,
+                            },
+                            {
+                              id: 'anime',
+                              label: `Anime (${searchAnimeRes.length})`,
+                            },
+                          ] as const
+                        ).map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setSearchFilter(tab.id)}
+                            className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                              searchFilter === tab.id
+                                ? 'bg-gradient-to-r from-teal-300 to-cyan-300 font-bold text-slate-950'
+                                : 'border border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="flex gap-2">
-                      {(
-                        [
-                          { id: 'all', label: 'Semua' },
-                          {
-                            id: 'komik',
-                            label: `Komik (${searchComicRes.length})`,
-                          },
-                          {
-                            id: 'anime',
-                            label: `Anime (${searchAnimeRes.length})`,
-                          },
-                        ] as const
-                      ).map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setSearchFilter(tab.id)}
-                          className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                            searchFilter === tab.id
-                              ? 'bg-gradient-to-r from-teal-300 to-cyan-300 font-bold text-slate-950'
-                              : 'border border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                    {/* Baris Filter Kustom VoraToon (Sort, Format, Status) */}
+                    <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-300">
+                        <SlidersHorizontal size={13} />
+                        Filter:
+                      </span>
+
+                      {/* Sort Pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMIC_SORT_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setSearchSort(opt.id);
+                              executeSearch(activeSearchQuery, 1, false, {
+                                sort: opt.id,
+                              });
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              searchSort === opt.id
+                                ? 'border border-teal-300/50 bg-teal-400/20 font-bold text-teal-200'
+                                : 'border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <span className="text-white/20">|</span>
+
+                      {/* Format Pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMIC_FORMAT_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setSearchFormat(opt.id);
+                              executeSearch(activeSearchQuery, 1, false, {
+                                format: opt.id,
+                              });
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              searchFormat === opt.id
+                                ? 'border border-cyan-300/50 bg-cyan-400/20 font-bold text-cyan-200'
+                                : 'border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <span className="text-white/20">|</span>
+
+                      {/* Status Pills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMIC_STATUS_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setSearchStatus(opt.id);
+                              executeSearch(activeSearchQuery, 1, false, {
+                                status: opt.id,
+                              });
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              searchStatus === opt.id
+                                ? 'border border-emerald-300/50 bg-emerald-400/20 font-bold text-emerald-200'
+                                : 'border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -1193,55 +1509,71 @@ export default function AniWan() {
                         Mencari judul yang sesuai...
                       </p>
                     </div>
-                  ) : !activeSearchQuery ? (
-                    <div className={`${LIQUID_PANEL} p-12 text-center`}>
-                      <Search
-                        size={28}
-                        className="mx-auto text-teal-300/60"
-                      />
-                      <p className="mt-3 text-sm font-semibold text-white">
-                        Ketik judul anime atau komik di kolom pencarian atas
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Kamu bisa mencari judul seperti One Piece, Solo Leveling,
-                        Jujutsu Kaisen, atau Re:Monster.
-                      </p>
-                    </div>
                   ) : (
                     <div className="space-y-10">
                       {(searchFilter === 'all' || searchFilter === 'komik') &&
                         searchComicRes.length > 0 && (
                           <div>
                             <h3 className="mb-4 text-base font-bold text-white">
-                              Komik &amp; Manhwa ({searchComicRes.length})
+                              Komik &amp; Manhwa VoraToon ({searchComicRes.length}
+                              )
                             </h3>
                             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                               {searchComicRes.map((c, i) => (
-                                <button
-                                  key={i}
-                                  type="button"
-                                  onClick={() =>
-                                    openComicDetail(c.url, c.image_url)
-                                  }
-                                  className={`${LIQUID_CARD} flex flex-col text-left`}
+                                <div
+                                  key={`${c.url}-${i}`}
+                                  className={`${LIQUID_CARD} flex flex-col`}
                                 >
-                                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-900">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComicDetail(c.url, c.image_url)
+                                    }
+                                    className="relative aspect-[3/4] w-full overflow-hidden bg-slate-900 text-left"
+                                  >
                                     <img
                                       src={c.image_url}
                                       alt={c.title}
                                       loading="lazy"
+                                      referrerPolicy="no-referrer"
                                       className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                                     />
-                                    <span className="absolute left-2.5 top-2.5 rounded-lg bg-teal-300 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+                                    <span className="absolute left-2.5 top-2.5 rounded-lg bg-teal-300 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-950">
                                       {c.type}
                                     </span>
-                                  </div>
-                                  <div className="p-3">
-                                    <h4 className="line-clamp-2 text-xs font-bold text-white group-hover:text-teal-200">
+                                  </button>
+                                  <div className="flex flex-1 flex-col justify-between p-3">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openComicDetail(c.url, c.image_url)
+                                      }
+                                      className="line-clamp-2 text-left text-xs font-bold text-white group-hover:text-teal-200"
+                                    >
                                       {c.title}
-                                    </h4>
+                                    </button>
+                                    <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2 text-[11px]">
+                                      {c.chapter_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openChapterReader(c.chapter_url!)
+                                          }
+                                          className="font-semibold text-teal-300 hover:underline"
+                                        >
+                                          {c.latest_chapter}
+                                        </button>
+                                      ) : (
+                                        <span className="text-slate-400">
+                                          {c.latest_chapter}
+                                        </span>
+                                      )}
+                                      <span className="text-[10px] text-slate-400">
+                                        {c.update_time}
+                                      </span>
+                                    </div>
                                   </div>
-                                </button>
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -1256,7 +1588,7 @@ export default function AniWan() {
                             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                               {searchAnimeRes.map((a, i) => (
                                 <button
-                                  key={i}
+                                  key={`${a.url}-${i}`}
                                   type="button"
                                   onClick={() =>
                                     openAnimeEpisode(a.url, a.thumb)
@@ -1285,6 +1617,37 @@ export default function AniWan() {
                           </div>
                         )}
 
+                      {hasMoreSearch &&
+                        (searchComicRes.length > 0 ||
+                          searchAnimeRes.length > 0) && (
+                          <div className="pt-4 text-center">
+                            <button
+                              type="button"
+                              disabled={loadingMoreSearch}
+                              onClick={() =>
+                                executeSearch(
+                                  activeSearchQuery,
+                                  searchPage + 1,
+                                  true
+                                )
+                              }
+                              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-teal-300/35 bg-teal-400/15 px-8 text-xs font-bold text-teal-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl transition hover:bg-teal-300 hover:text-slate-950 disabled:opacity-50"
+                            >
+                              {loadingMoreSearch ? (
+                                <>
+                                  <Loader2 size={15} className="animate-spin" />
+                                  Memuat Hasil Berikutnya...
+                                </>
+                              ) : (
+                                <>
+                                  Tampilkan Lebih Banyak Hasil (Halaman{' '}
+                                  {searchPage + 1})
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
                       {searchComicRes.length === 0 &&
                         searchAnimeRes.length === 0 && (
                           <div className={`${LIQUID_PANEL} p-12 text-center`}>
@@ -1294,7 +1657,7 @@ export default function AniWan() {
                             </p>
                             <p className="mt-1 text-xs text-slate-400">
                               Coba gunakan kata kunci yang lebih pendek atau
-                              ejaan Jepang/Inggrisnya.
+                              reset filter tipe/status di atas.
                             </p>
                           </div>
                         )}
@@ -1303,18 +1666,80 @@ export default function AniWan() {
                 </section>
               )}
 
-              {/* TAB 3: KOLEKSI KOMIK, MANHWA & MANHUA */}
+              {/* TAB 3: KOLEKSI KOMIK VORATOON + FILTER + SHOW MORE */}
               {activeTab === 'komik' && (
-                <section className="mt-8">
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-xl font-bold text-white sm:text-2xl">
-                        Katalog Komik, Manhwa &amp; Manhua
-                      </h2>
-                      <p className="text-xs text-slate-400">
-                        Ketuk sampul untuk melihat daftar chapter atau langsung
-                        baca chapter terbaru
-                      </p>
+                <section className="mt-8 space-y-6">
+                  <div className={`${LIQUID_PANEL} p-5 sm:p-6`}>
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                      <div>
+                        <h2 className="text-xl font-bold text-white sm:text-2xl">
+                          Katalog Komik, Manhwa &amp; Manhua (VoraToon)
+                        </h2>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Ketuk sampul untuk melihat daftar lengkap chapter atau
+                          langsung baca chapter terbaru
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMIC_SORT_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setComicSort(opt.id);
+                              loadComicPage(1, false, { sort: opt.id });
+                            }}
+                            className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                              comicSort === opt.id
+                                ? 'bg-gradient-to-r from-teal-300 to-cyan-300 font-bold text-slate-950 shadow'
+                                : 'border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3.5">
+                      {COMIC_FORMAT_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setComicFormat(opt.id);
+                            loadComicPage(1, false, { format: opt.id });
+                          }}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                            comicFormat === opt.id
+                              ? 'border border-teal-300/50 bg-teal-400/20 font-bold text-teal-200'
+                              : 'border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+
+                      <span className="text-white/20">|</span>
+
+                      {COMIC_STATUS_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setComicStatus(opt.id);
+                            loadComicPage(1, false, { status: opt.id });
+                          }}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                            comicStatus === opt.id
+                              ? 'border border-cyan-300/50 bg-cyan-400/20 font-bold text-cyan-200'
+                              : 'border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
@@ -1342,16 +1767,18 @@ export default function AniWan() {
                                 src={comic.image_url}
                                 alt={comic.title}
                                 loading="lazy"
+                                referrerPolicy="no-referrer"
                                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                               />
-                              <span className="absolute left-2.5 top-2.5 rounded-lg border border-white/15 bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-md">
+                              <span className="absolute left-2.5 top-2.5 rounded-lg border border-white/15 bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold uppercase text-white backdrop-blur-md">
                                 {comic.type}
                               </span>
-                              {comic.is_colored && (
-                                <span className="absolute right-2.5 top-2.5 rounded-lg bg-teal-300/95 px-2 py-0.5 text-[10px] font-bold text-slate-950">
-                                  Berwarna
+                              {comic.rating ? (
+                                <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-lg bg-slate-950/80 px-2 py-0.5 text-[10px] font-bold text-amber-300 backdrop-blur-md">
+                                  <Star size={9} fill="currentColor" />
+                                  {Number(comic.rating).toFixed(1)}
                                 </span>
-                              )}
+                              ) : null}
                               {comic.is_hot && (
                                 <span className="absolute bottom-2 left-2.5 inline-flex items-center gap-1 rounded-md bg-rose-500/90 px-2 py-0.5 text-[10px] font-bold text-white">
                                   <Flame size={10} /> Populer
@@ -1395,7 +1822,7 @@ export default function AniWan() {
                         ))}
                   </div>
 
-                  {comicFeed.length > 0 && (
+                  {hasMoreComics && comicFeed.length > 0 && (
                     <div className="mt-10 text-center">
                       <button
                         type="button"
@@ -1409,7 +1836,10 @@ export default function AniWan() {
                             Memuat Komik Berikutnya...
                           </>
                         ) : (
-                          <>Muat Lebih Banyak Komik (Halaman {comicPage + 1})</>
+                          <>
+                            Tampilkan Lebih Banyak Komik (Halaman {comicPage + 1}
+                            )
+                          </>
                         )}
                       </button>
                     </div>
@@ -1432,7 +1862,6 @@ export default function AniWan() {
                         </p>
                       </div>
 
-                      {/* Switcher Jadwal Anime vs Jadwal Komik */}
                       <div className="inline-flex self-start rounded-2xl border border-white/15 bg-slate-950/60 p-1 sm:self-auto">
                         <button
                           type="button"
@@ -1461,7 +1890,6 @@ export default function AniWan() {
                       </div>
                     </div>
 
-                    {/* Pilihan Hari Senin - Minggu */}
                     <div className="mt-4 flex flex-wrap gap-1.5">
                       {DAYS_INDO.map((day) => {
                         const active = selectedDay === day;
@@ -1494,7 +1922,6 @@ export default function AniWan() {
                       </p>
                     </div>
                   ) : scheduleType === 'anime' ? (
-                    /* Daftar Jadwal Anime */
                     <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-3">
                       {activeDayAnimeList.map((item, idx) => (
                         <button
@@ -1520,7 +1947,6 @@ export default function AniWan() {
                       ))}
                     </div>
                   ) : (
-                    /* Daftar Jadwal Rilis Komik */
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                       {activeDayComicList.map((comic, idx) => (
                         <div
@@ -1539,10 +1965,11 @@ export default function AniWan() {
                                 src={comic.image_url}
                                 alt={comic.title}
                                 loading="lazy"
+                                referrerPolicy="no-referrer"
                                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                               />
                             )}
-                            <span className="absolute left-2.5 top-2.5 rounded-lg bg-teal-300 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+                            <span className="absolute left-2.5 top-2.5 rounded-lg bg-teal-300 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-950">
                               {comic.type || 'Komik'}
                             </span>
                             <span className="absolute bottom-2 right-2 rounded-lg border border-white/15 bg-slate-950/80 px-2 py-0.5 text-[10px] font-semibold text-teal-200 backdrop-blur-md">
@@ -1634,6 +2061,7 @@ export default function AniWan() {
                             <img
                               src={item.thumb}
                               alt={item.title}
+                              referrerPolicy="no-referrer"
                               className="h-24 w-16 shrink-0 rounded-xl object-cover"
                             />
                           )}
