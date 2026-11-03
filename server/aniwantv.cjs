@@ -1204,10 +1204,3 @@ async function scrapeAniWanTV(input = "", page = 1, options = {}) {
 module.exports = scrapeAniWanTV;
 module.exports.scrapeAniWanTV = scrapeAniWanTV;
 module.exports.VoratoonClient = VoratoonClient;
-module.exports.getLatestAnime = getLatestAnime;
-module.exports.getDualSchedule = getDualSchedule;
-module.exports.getAnimeEpisode = getAnimeEpisode;
-module.exports.getLatestComics = getLatestComics;
-module.exports.getComicDetails = getComicDetails;
-module.exports.getChapterImages = getChapterImages;
-module.exports.searchComics = searchComics;
