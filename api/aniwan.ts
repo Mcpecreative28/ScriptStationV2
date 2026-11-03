@@ -8,7 +8,12 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 
-let scrapeAniWanTV: (input?: string, page?: number) => Promise<any>;
+let scrapeAniWanTV: (
+  input?: string,
+  page?: number,
+  options?: { sort?: string; status?: string; format?: string }
+) => Promise<any>;
+
 try {
   scrapeAniWanTV = require('../server/aniwantv.cjs');
 } catch {
@@ -58,6 +63,10 @@ export default async function handler(req: any, res: any) {
     const pageRaw = Number.parseInt(getStringParam(req.query?.page, '1'), 10);
     const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
+    const sort = getStringParam(req.query?.sort, 'new').trim();
+    const status = getStringParam(req.query?.status, '').trim();
+    const format = getStringParam(req.query?.format, '').trim();
+
     if (query.length > 500) {
       return res.status(400).json({
         status: false,
@@ -65,7 +74,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const result = await scrapeAniWanTV(query, page);
+    const result = await scrapeAniWanTV(query, page, { sort, status, format });
 
     if (!result || result.status === false) {
       return res.status(502).json({
